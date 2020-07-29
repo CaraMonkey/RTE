@@ -1,0 +1,52 @@
+begin
+	LOGLEVEL := 3
+	print("Execute MongoDB query find:", NL)
+	print("db.products.find({productName: {$in: ['001', 'test']}})", NL)
+	print(NL)
+
+    tRefQuery := build("{\"productName\": {$in: [\"001\", \"test\"]}}")
+    qQUERY1 := db.products.find(tRefQuery)
+    
+    while valid(qQUERY1) do
+        next(qQUERY1)
+        print(read(qQUERY1), NL)
+    endwhile
+
+	print(NL)
+	print("Execute MongoDB query aggregate:", NL)
+	print(NL)
+
+    tAggregate := build("[",  \
+         "{$match: { _stage: \"UNDEFINED\" } },",  \
+        "{ $group: ",  \
+            "{",  \
+             	 "_id:  \"$_date\",",  \
+                 "total: { $sum: \"$invoiceSummary.invoiceTotals.invoiceTotal.monetaryAmount\"}",  \
+            "}",  \
+        "},",  \
+        "{$sort: { total: -1 } }",  \
+    "]")
+
+    qQUERY2 := db.invoices.aggregate(tAggregate)
+    
+    while valid(qQUERY2) do
+        next(qQUERY2)
+        tText := read(qQUERY2)
+        print(tText, NL)
+		print("Test that the current result is not consumed by read function", NL)
+        print(read(qQUERY2), NL)
+    endwhile
+
+	print("Execute MongoDB query find:", NL)
+	print("db.products.find({ baseProductNumber: '123', productName: {$in: ['001', 'test']}})", NL)
+	print(NL)
+
+	tRef := "test"
+tRefQuery := build("{\"baseProductNumber\":\"123\", \"productName\": {$in: [\"001\",\"", tRef,"\"]}}")
+	qQUERY3 := db.products.find(tRefQuery)
+
+	while valid(qQUERY3) do
+        next(qQUERY3)
+        print(read(qQUERY3), NL)
+    endwhile
+endbegin

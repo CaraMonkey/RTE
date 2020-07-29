@@ -1,0 +1,17 @@
+begin
+
+	load("/opt/sharedgcm/sdi/ContenuDuTableau.txt",taAUTRE_Type)
+!	load("C:/Users/jghesquier/Desktop/ContenuDuTableau.txt",taAUTRE_Type)
+	nLin2 := 0
+	
+	while nLin2 < 20 do
+		nLin2 ++
+		print (time("%Y%m%d %H%M%S")," - Boucle nLin2=",nLin2,NL) > "/opt/sharedgcm/sdi/julien.log"
+!		print (time("%Y%m%d %H%M%S")," - Boucle nLin2=",nLin2,NL) > "C:/Users/jghesquier/Desktop/julien.log"
+		while tIndex in taAUTRE_Type do
+
+			split(tIndex, taIndex, ";")
+
+		endwhile
+	endwhile
+endbegin

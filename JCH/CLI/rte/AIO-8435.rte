@@ -1,0 +1,609 @@
+%@(#)  DESADV_To_X12_856.rte     modif:17/03/2016
+!==============================================================================
+% Fichier       : DESADV_To_X12_856.rte   version 1.0
+!------------------------------------------------------------------------------
+% Description   : <description succinte du programme>
+!------------------------------------------------------------------------------
+% Auteur        : RNH - GNX
+!==============================================================================
+! 17/03/2016  XX  Creation
+! 17/03/2016  XX  <commentaires>
+!==============================================================================
+!
+! un traducteur DELIVRY03 ==> ANSI X12 856
+!
+! Compilation 
+!
+!==============================================================================
+! fichier en entrée  : <nom ou regle de nommage du fichier en entree> 
+! fichier en sortie  : <nom ou regle de nommage du fichier en sortie> 
+! fichier temporaire : <nom ou regle de nommage du fichier temporaire> 
+!==============================================================================
+
+! Définition du message
+message "ANSIX12/002040/856.msg" building
+
+base "syslog.cfg" SYSLOG
+
+! Macros du fichier d'entrée-sortie
+#include "DELVRY03V4.build.inc"
+
+
+!===========================================================
+
+! Section d'initialisation
+
+begin
+
+log("Begin", NL)
+
+nUnitShip := 0
+nTotalHL := 0
+nCount := 1
+nLigne24 := 1
+nHL := 1
+nL24 := 0
+nL37 := 0
+
+SYSLOG := find(sSYSLOG,INDEX=number(pINDEX))
+
+log("End", NL)
+
+endbegin
+
+!===========================================================
+
+line(1:"EDI_DC40")
+log("ICI line 1", NL)
+tNumDOC := build(number(peel(pick(1, 14, 16), " ")))
+
+endline
+
+line(1:"E2EDL20")
+
+tE2EDL20002_VBELN := build(E2EDL20002_VBELN)
+
+log("value de E2EDL20002_BTGEW = ", E2EDL20002_BTGEW, NL)
+
+
+tE2EDL20002_BTGEW := build(nfArrondi(E2EDL20002_BTGEW))
+
+
+log("value de tE2EDL20002_BTGEW = ", tE2EDL20002_BTGEW, NL)
+
+tE2EDL20002_GEWEI_tmp := build(E2EDL20002_GEWEI)
+if tE2EDL20002_GEWEI_tmp = "KGM" then
+   tE2EDL20002_GEWEI := "KG"
+else
+   tE2EDL20002_GEWEI := tE2EDL20002_GEWEI_tmp
+endif
+
+tE2EDL20002_NTGEW := build(nfArrondi(E2EDL20002_NTGEW))
+tE2EDL20002_ANZPK := build(E2EDL20002_ANZPK)
+tE2EDL20002_TRAID := build(E2EDL20002_TRAID)
+tE2EDL20002_BOLNR := build(E2EDL20002_BOLNR)
+tE2EDL20002_ABLAD := build(E2EDL20002_ABLAD)
+
+endline
+
+line(1:"E2ADRM1")
+
+tE2ADRM1001_PARTNER_Q := ""
+tE2ADRM1001_PARTNER_Q := build(E2ADRM1001_PARTNER_Q)
+
+endline
+
+line(1:"E2ADRE1")
+tE2ADRE1000_EXTENT_Q := E2ADRE1000_EXTEND_Q
+
+if tE2ADRM1001_PARTNER_Q = "AG" then
+   tE2ADRE1000_EXTEND_D_AG := build(E2ADRE1000_EXTEND_D)
+else
+   if tE2ADRM1001_PARTNER_Q = "WE" and tE2ADRE1000_EXTENT_Q = "301" then
+      tE2ADRE1000_EXTEND_D_WE := build(E2ADRE1000_EXTEND_D)
+   endif
+   
+endif
+
+
+endline
+
+line(1:"E2EDT13")
+
+tQUALF := E2EDT13001_QUALF
+
+if tQUALF = "006" then
+   tE2EDT13001_ISDD_006 := build(E2EDT13001_ISDD)
+   tE2EDT13001_ISDZ_006 := build(E2EDT13001_ISDZ)
+endif
+
+endline
+
+line(1:"E2EDL24")
+nL24++
+tE2EDL24005_VRKME_tmp := ""
+taE2EDL24005_POSNR[nL24] := build(E2EDL24005_POSNR)
+taE2EDL24005_KDMAT[nL24] := build(E2EDL24005_KDMAT)
+taE2EDL24005_MATWA[nL24] := build(E2EDL24005_MATWA)
+taE2EDL24005_LFIMG[nL24] := build(nfArrondi(build(E2EDL24005_LFIMG)))
+tE2EDL24005_VRKME_tmp := build(E2EDL24005_VRKME)
+
+if tE2EDL24005_VRKME_tmp = "MTR" then
+   taE2EDL24005_VRKME[nL24] :="MR"
+else
+   taE2EDL24005_VRKME[nL24] := tE2EDL24005_VRKME_tmp
+endif
+
+endline
+
+line(1:"E2EDL26")
+
+taE2EDL26001_PSTYV[nL24] := build(E2EDL26001_PSTYV)
+
+endline
+
+line(1:"E2EDL41")
+
+taE2EDL41000_QUALI[nL24] := build(E2EDL41000_QUALI)
+
+if taE2EDL41000_QUALI[nL24] = "002" then
+
+   taE2EDL41000_IHREZ_002[nL24] := build(E2EDL41000_IHREZ)
+   taE2EDL41000_BSTNR_002[nL24] := build(E2EDL41000_BSTNR)
+else
+   if taE2EDL41000_QUALI[nL24] = "001" then
+   
+      taE2EDL41000_BSTNR_001[nL24] := build(E2EDL41000_BSTNR)
+   
+   endif
+endif
+
+endline
+
+line(1:"E2EDL37")
+tE2EDL37004_SMGKN :=""
+tE2EDL37004_SMGKN := build(E2EDL37004_SMGKN)
+
+if tE2EDL37004_SMGKN = "S" then
+nL37++
+
+taE2EDL37004_EXIDV[nL37] := build(E2EDL37004_EXIDV)
+taE2EDL37004_BRGEW[nL37] := build(E2EDL37004_BRGEW)
+taE2EDL37004_SMGKN[nL37] := build(E2EDL37004_SMGKN)
+taE2EDL37004_GWEIT[nL37] := build(E2EDL37004_GWEIT)
+
+endif
+
+endline
+
+line(1:"E2EDL44")
+if tE2EDL37004_SMGKN = "S" then
+                     
+      taE2EDL44003_VEMNG[nL37] := build(E2EDL44003_VEMNG)
+      taE2EDL44003_POSNR[nL37] := build(E2EDL44003_POSNR)
+      
+endif
+
+endline
+
+! Section des traitements par défaut
+default
+
+enddefault
+
+!===========================================================
+
+! Section de fin des traitements
+
+end
+
+   tfEntete()
+   while nLigne24 <= nL24 do 
+   
+   
+if taE2EDL26001_PSTYV[nLigne24] <> "ZEMC" and taE2EDL26001_PSTYV[nLigne24] <> "ZEMK" then
+      tfHL()
+      tfSousHL()
+endif
+
+
+	nLigne24++
+	
+   endwhile
+   
+   tfPied()
+   
+   if valid(MESSAGE) then
+     print(MESSAGE)
+   else
+     log(MESSAGE)   
+	 exit(1)
+   endif
+  
+endend
+
+!===========================================================
+
+
+
+function tfEntete()
+   log("Creation entete  ",pISA08,NL)
+
+   pISA05 := "ZZ"
+   pISA06 := "1562123513ACOM"
+   !pISA16.2 := "B"
+   pGS.GS01 := "SH"  
+   !pGS.GS02 := tE2ADRE1000_EXTEND_D_AG
+   pGS.GS02 := "1562123513ACOM"
+   !Modif le 02/06/2017 YC
+   tReceiver := pISA08
+   pGS.GS03 := tReceiver
+   !------
+   pGS.GS07 := "X"
+   pGS.GS08 := "003040"
+   
+
+   
+      segment ST     ! M 1/1 Transaction Set Header
+        
+        eST01 := "856"   ! M ID3..3 Transaction Set Identifier Code (143)
+        eST02 := build(number(tNumDOC))  ! M AN4..9 Transaction Set Control Number (329)
+        
+      endsegment
+         
+      segment BSN     ! M 1/1 Beginning Segment for Ship Notice
+      
+         eBSN01 := "00"   ! M ID2..2 Transaction Set Purpose Code (353)
+         eBSN02 := build(number(tE2EDL20002_VBELN)) ! M AN2..30 Shipment Identification (396) 
+         eBSN03 := "160311" 		! time("now" ,"%y%m%d")  ! M DT6..6 Date (373)
+         eBSN04 := "1946"		 ! time("now" ,"%H%M")  ! M TM4..4 Time (337)
+         
+      endsegment
+      
+      
+      segment DTM     ! C 1/10 Date/Time Reference
+      
+         eDTM01 := "011"  ! M ID3..3 Date/Time Qualifier (374)
+         
+         
+         if tE2EDT13001_ISDD_006 <> "" then 
+            eDTM02 := substr(tE2EDT13001_ISDD_006 ,3,length(tE2EDT13001_ISDD_006)) ! C DT6..6 Date (373)
+         else
+            eDTM02 := "201902" !TO MODIFY
+         endif
+         
+         
+		if tE2EDT13001_ISDD_006 <> "" then 
+        	eDTM03 := substr(tE2EDT13001_ISDZ_006,3,length(tE2EDT13001_ISDZ_006)) ! C TM4..4 Time (337)
+	    else
+			eDTM03 := "2019" !TO MODIFY
+        endif
+         
+      endsegment
+      
+      ! Groupe g1 : M 1/200000 
+      segment HL g1     ! M 1/1 Hierarchical Level
+      
+      	nTotalHL++
+         eHL01 := "1"  ! M AN1..12 Hierarchical ID Number (628)
+         eHL03 := "S"  ! M ID1..2 Hierarchical Level Code (735)
+         
+      endsegment
+      
+      segment MEA g1     ! C 1/40 Measurements
+      
+         eMEA01 := "PD"    ! C ID2..2 Measurement Reference ID Code (737)
+         eMEA02 := "G" ! C ID1..3 Measurement Qualifier (738)
+         eMEA03 := tE2EDL20002_BTGEW ! C R1..10 Measurement Value (739)
+         eMEA04 := tE2EDL20002_GEWEI ! C ID2..2 Unit of Measurement Code (355
+         
+      endsegment
+      
+      segment MEA g1     ! C 1/40 Measurements
+         eMEA01 := "PD"    ! C ID2..2 Measurement Reference ID Code (737)
+         eMEA02 := "N" ! C ID1..3 Measurement Qualifier (738)
+         eMEA03 := tE2EDL20002_NTGEW ! C R1..10 Measurement Value (739)
+         eMEA04 := tE2EDL20002_GEWEI ! C ID2..2 Unit of Measurement Code (355)
+      endsegment
+      
+      
+      segment TD1 g1     ! C 1/20 Carrier Details (Quantity and Weight)
+         eTD101 := "BOX90"  ! C ID5..5 Packaging Code (103) 
+         eTD102 := build(number(build(nL37)))  ! C N0,1..7 Lading Quantity (80)
+      endsegment
+      
+      segment TD1 g1     ! C 1/20 Carrier Details (Quantity and Weight)
+         eTD101 := "PLT90"  ! C ID5..5 Packaging Code (103) 
+         eTD102 := build(number(tE2EDL20002_ANZPK))  ! C N0,1..7 Lading Quantity (80)
+      endsegment
+      
+      segment TD5 g1     ! C 1/12 Carrier Details (Routing Sequence/Transit Time)
+         eTD501 := "B"  ! C ID1..2 Routing Sequence Code (133)
+         eTD502 := "2"  ! C ID1..2 Identification Code Qualifier (66)
+         eTD503 := "M "  ! C ID2..17 Identification Code (67)
+      endsegment
+      
+      segment TD3 g1     ! C 1/12 Carrier Details (Equipment)
+         eTD301 := "TL"   ! M ID2..2 Equipment Description Code (40)
+         
+         
+         if tE2EDL20002_TRAID <> "" then 
+        	eTD303 := substr(tE2EDL20002_TRAID,1,10)  ! C AN1..4 Equipment Initial (206)
+	    else
+			eTD303 := "201906" !TO MODIFY
+        endif
+         
+         
+      endsegment
+      
+      segment REF g1     ! C 1/200 Reference Numbers
+      
+         eREF01 := "BM"   ! M ID2..2 Reference Number Qualifier (128)
+         if tE2EDL20002_BOLNR <> "" then 
+            eREF02 :=  build(number(tE2EDL20002_BOLNR)) ! M AN1..30 Reference Number (127)
+         else
+            eREF02 :=  build(number(tE2EDL20002_VBELN)) ! M AN1..30 Reference Number (127)
+         endif
+      
+      endsegment
+      
+      segment REF g1     ! C 1/200 Reference Numbers
+        
+         eREF01 := "PK"   ! M ID2..2 Reference Number Qualifier (128)
+         eREF02 :=  build(number(tE2EDL20002_VBELN)) ! M AN1..30 Reference Number (127)
+      
+      endsegment
+      
+      ! Groupe g1,g3 : C 1/200 
+      segment N1 g1,g3     ! M 1/1 Name
+      
+      
+         eN101 := "SU"  ! M ID2..2 Entity Identifier Code (98)
+         eN103 := "92"  ! C ID1..2 Identification Code Qualifier (66)
+         eN104 := tE2ADRE1000_EXTEND_D_AG  ! C ID2..17 Identification Code (67)
+         
+      endsegment
+      
+      ! Groupe g1,g3 : C 1/200 
+      segment N1 g1,g3     ! M 1/1 Name
+      
+      
+         eN101 := "SF"  ! M ID2..2 Entity Identifier Code (98)
+         eN103 := "92"  ! C ID1..2 Identification Code Qualifier (66)
+         eN104 := tE2ADRE1000_EXTEND_D_AG  ! C ID2..17 Identification Code (67)
+         
+      endsegment
+      
+      ! Groupe g1,g3 : C 1/200 
+      segment N1 g1,g3     ! M 1/1 Name
+      
+         eN101 := "ST"  ! M ID2..2 Entity Identifier Code (98)
+         eN103 := "92"  ! C ID1..2 Identification Code Qualifier (66)
+         eN104 := tE2ADRE1000_EXTEND_D_WE  ! C ID2..17 Identification Code (67)
+      
+      endsegment
+
+endfunction
+
+
+function tfHL()
+       log(" Creation LIN pere  ",NL)
+      ! Groupe g1 : M 1/200000 
+      segment HL g1     ! M 1/1 Hierarchical Level
+      nHL++
+      nTotalHL++
+         eHL01 := build(nHL)  ! M AN1..12 Hierarchical ID Number (628)
+         eHL02 := "1" 
+         eHL03 := "O"  ! M ID1..2 Hierarchical Level Code (735)
+      nPereHL := nHL   
+      endsegment
+      
+      
+      segment LIN g1     ! C 1/1 Item Identification
+      
+         eLIN02 := "BP"  ! M ID2..2 Product/Service ID Qualifier (235)
+         eLIN03 := taE2EDL24005_KDMAT[nLigne24]   ! M AN1..30 Product/Service ID (234)
+         eLIN04 := "VP"  ! C ID2..2 Product/Service ID Qualifier (235)
+         eLIN05 :=  taE2EDL24005_MATWA[nLigne24] ! C AN1..30 Product/Service ID (234)
+         
+      endsegment
+      
+      segment SN1 g1     ! C 1/1 Item Detail (Shipment)
+      
+         eSN102 := taE2EDL24005_LFIMG[nLigne24]  ! M R1..10 Number of Units Shipped (382)
+         eSN103 := taE2EDL24005_VRKME[nLigne24] ! M ID2..2 Unit of Measurement Code (355)
+         nUnitShip := nUnitShip + number(taE2EDL24005_LFIMG[nLigne24])
+      endsegment
+      
+      segment PRF g1     ! C 1/1 Purchase Order Reference
+         
+         if taE2EDL41000_IHREZ_002[nLigne24] <> "" then
+            ePRF01 := substr(taE2EDL41000_IHREZ_002[nLigne24],1,22)  ! M AN1..22 Purchase Order Number (324)
+         else
+            if taE2EDL41000_BSTNR_002[nLigne24] <> "" and substr(taE2EDL41000_BSTNR_002[nLigne24],1,6) <> "PL:003" then
+               ePRF01 := substr(taE2EDL41000_BSTNR_002[nLigne24],1,22)  ! M AN1..22 Purchase Order Number (324)
+      
+            else
+               ePRF01 := substr(taE2EDL41000_BSTNR_001[nLigne24],1,22)  ! M AN1..22 Purchase Order Number (324)
+      
+            endif
+         endif  
+      
+      endsegment
+      
+      segment REF g1     ! C 1/200 Reference Numbers
+      
+         eREF01 := "DK"   ! M ID2..2 Reference Number Qualifier (128)
+         eREF02 :=  tE2EDL20002_ABLAD ! M AN1..30 Reference Number (127)
+      
+      endsegment
+      
+      bFirstIteration := TRUE
+
+       !log(" Boucle L37  ",NL)
+      while nCount <= nL37 do
+      if taE2EDL44003_POSNR[nCount] = taE2EDL24005_POSNR[nLigne24] then
+
+        if bFirstIteration then
+          
+          bFirstIteration := FALSE
+          tE2EDL44003_VEMNG := taE2EDL44003_VEMNG[nCount]
+          !log(" tE2EDL44003_VEMNG  : " , tE2EDL44003_VEMNG,NL)
+          naLongeur[build(tE2EDL44003_VEMNG)] := 1
+          taCLD[build(tE2EDL44003_VEMNG)] := build(nCount)
+        else
+          
+          tE2EDL44003_VEMNG := taE2EDL44003_VEMNG[nCount]
+           if taCLD[build(tE2EDL44003_VEMNG)] <> EMPTY then
+
+              naLongeur[build(tE2EDL44003_VEMNG)] := naLongeur[build(tE2EDL44003_VEMNG)] + 1 ! penser à utiliserr des index dans le cas où y'a des L44 grouper
+              taCLD[build(tE2EDL44003_VEMNG)] := build(taCLD[build(tE2EDL44003_VEMNG)],"|",nCount)
+
+           else
+ 
+           taCLD[build(tE2EDL44003_VEMNG)] := build(nCount)
+           naLongeur[build(tE2EDL44003_VEMNG)] := 1
+
+           endif
+        endif
+      endif
+      nCount++
+      endwhile
+      !log(" FIN Boucle L37  ",NL)
+      !log(" Boucle CLD  ",NL)
+	!log(taCLD)
+      while tIndex in taCLD do
+      nNumb := split(taCLD[tIndex],taCldseg1,"|")
+	if nNumb > 1 then
+	tCld := taCldseg1[1]
+	else
+	tCld := taCLD[tIndex]
+	endif
+!log (" Longuer : ",tCld,NL)
+      ! Groupe g1,g2 : C 1/200 
+	!split(taE2EDL44003_VEMNG[tCld],taECLD01,".")
+	split(tIndex,taECLD01,".")
+      segment CLD g1,g2     ! M 1/1 Load Detail
+      
+         eCLD01 := build(taECLD01[1])  ! M N0,1..5 Number of Loads (622)
+         eCLD02 := build(naLongeur[tIndex]) ! M R1..10 Number of Units Shipped (382)
+         eCLD03 := "PLT90"  ! C ID5..5 Packaging Code (103)
+      
+      endsegment
+      
+      endwhile
+
+tCld := ""
+remove(taCldseg1)
+!log(" FIN Boucle CLD  ",NL)
+endfunction
+
+function tfSousHL()
+   
+   log(" Creation LIN Fils",NL)
+   !log(" 2 -Boucle CLD",NL)
+	!log(taCLD)
+      while tIndexSous in taCLD do
+
+	nNumb1 := split(taCLD[tIndexSous],taCldseg,"|")
+
+	if nNumb1 > 1 then
+	tCld := taCldseg[1]
+	else
+	tCld := taCLD[tIndexSous]
+	endif
+
+
+      segment HL g1     ! M 1/1 Hierarchical Level
+      !nSousHL := nHL + 1
+ 	nHL++
+	nTotalHL++
+         eHL01 := build(nHL)  ! M AN1..12 Hierarchical ID Number (628)
+         eHL02 := build(nPereHL)
+         eHL03 := "I"  ! M ID1..2 Hierarchical Level Code (735)
+	
+      endsegment
+      
+      !split(taE2EDL44003_VEMNG[tCld],taESN102,".")
+	split(tIndexSous,taESN102,".")
+      segment SN1 g1     ! C 1/1 Item Detail (Shipment)
+      	
+         eSN102 := taESN102[1]  ! M R1..10 Number of Units Shipped (382)
+         eSN103 := taE2EDL24005_VRKME[nLigne24] ! M ID2..2 Unit of Measurement Code (355)
+      
+      endsegment
+nCLD := number(tCld)
+      segment MEA g1     ! C 1/40 Measurements
+      
+         eMEA01 := "PD"    ! C ID2..2 Measurement Reference ID Code (737)
+         eMEA02 := "G" ! C ID1..3 Measurement Qualifier (738)
+         eMEA03 :=  build(nfArrondi(taE2EDL37004_BRGEW[number(taCldseg[1])])) ! C R1..10 Measurement Value (739)
+	if taE2EDL37004_GWEIT[number(taCldseg[1])] = "KGM" then
+         eMEA04 := substr(taE2EDL37004_GWEIT[number(taCldseg[1])],1,2) ! C ID2..2 Unit of Measurement Code (355
+      	endif
+      endsegment
+      
+      !split(taCLD[tIndexSous],taCldseg,"|")
+      
+               while tLongeur in taCldseg do
+                 segment REF g1     ! C 1/200 Reference Numbers
+      
+                  eREF01 := "LS"   ! M ID2..2 Reference Number Qualifier (128)
+                  eREF02 := build(number(taE2EDL37004_EXIDV[number(taCldseg[tLongeur])])) ! M AN1..30 Reference Number (127)
+      
+      			log("eREF02 = ", eREF02, NL)
+      
+                 endsegment
+               endwhile 
+      endwhile 
+remove(taCLD)
+remove(taCldseg)
+remove(naLongeur)
+nCount := 1
+      !log("FIN  2 -Boucle CLD",NL)
+endfunction
+
+function tfPied()
+log("Creation du Pied ",NL)
+      segment CTT     ! M 1/1 Transaction Totals
+         eCTT01 := build(nTotalHL)   ! M N0,1..6 Number of Line Items (354)
+         eCTT02 := build(nUnitShip)  ! C R1..10 Hash Total (347)
+      endsegment
+      
+      segment SE     ! M 1/1 Transaction Set Trailer
+         eSE01 := build(SEGMENTS+1)   ! M N0,1..6 Number of Included Segments (96)
+         log("eSE01 : ",eSE01,NL)
+         eSE02 := tNumDOC ! M AN4..9 Transaction Set Control Number (329)
+		log("eSE02 : ",eSE02,NL)
+         
+      endsegment
+
+endfunction
+
+function nfArrondi(tParam)
+
+log(" tParm : " ,tParm,NL)
+
+   nNbr := split(tParam,taParam,".")
+
+if nNbr > 1 then
+   
+   if number(substr(taParam[2],1,1)) >= 5 then
+      nRetour := number(taParam[1]) + 1
+	!log(" nRetour max : " ,nRetour,NL)
+      
+   else   
+      nRetour := number(taParam[1])
+	!log(" nRetour min : " ,nRetour,NL)
+      
+   endif
+
+else
+	!log(" nRetour sans arrondi : " ,nRetour,NL)
+	nRetour := number(tParam)
+endif
+
+
+   return nRetour 
+
+endfunction

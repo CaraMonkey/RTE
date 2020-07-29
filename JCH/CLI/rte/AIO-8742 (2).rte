@@ -1,0 +1,17 @@
+begin
+
+!	load("Home/datadir/opt/log/ContenuDuTableau.txt",taAUTRE_Type)
+	load(pTable,taAUTRE_Type)
+	nLin2 := 0
+	
+	while nLin2 < 200 do
+		nLin2 ++
+!		print (time("%Y%m%d %H%M%S")," - Boucle nLin2=",nLin2,NL) > "Home/datadir/opt/log/martin.log"
+		print (time("%Y%m%d %H%M%S")," - Boucle nLin2=",nLin2,NL) > pLog
+		while tIndex in taAUTRE_Type do
+
+			split(tIndex, taIndex, ";")
+
+		endwhile
+	endwhile
+endbegin

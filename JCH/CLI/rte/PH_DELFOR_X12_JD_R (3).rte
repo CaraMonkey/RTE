@@ -1,0 +1,1756 @@
+%@(#)  PH_DELFOR_X12_JD_R.rte									   modif:07.07.2015
+!==============================================================================
+% Fichier       : PH_DELFOR_X12_JD_R.rte   						version 1.9
+!------------------------------------------------------------------------------
+% Description   : Traduction de DELFOR X12 JD > Flat File ORDERS_PH
+!------------------------------------------------------------------------------
+% Auteur        : MVI - GENERIX
+!------------------------------------------------------------------------------
+!% Include     : generix_fct_V1_5.inc
+!% Include     : PH_DELFOR_R.inc
+!==============================================================================
+! 22/03/2011  MVI - GENERIX		1.0 Creation
+! 12/04/2013  MVI - GENERIX		1.1 Modification date FST
+! 11/12/2014  MVI - GENERIX		1.2 Multimessages
+! 16/12/2014  MVI - GENERIX		1.3 Compteur sur tDocNumber
+! 26/01/2015  MVI - GENERIX		1.4 Prise en compte de plusieurs NAD+ST
+! 25/02/2015  MVI - GENERIX		1.5 Gestion des qualifiants LIN
+! 26/05/2015  MVI - GENERIX		1.6 Delivery plan en fonction de J+ARGV[1], bug 28J en constante
+! 08/06/2015  MVI - GENERIX		1.7 Correction fichier vide ou tronqué
+! 04/06/2015  MVI - GENERIX		1.8 Ajout de Customer_order_number en fin de sch
+! 07/07/2015  MVI - GENERIX		1.9 Pas de delivery plan forcé pour sites JD différent
+!==============================================================================
+#define PROG_NAME "PH_DELFOR_X12_JD_R"
+#define PROG_DATE "07.07.2015"
+#define PROG_VER  "1.9"
+#define PROG_INFO build(PROG_NAME," v",PROG_VER," du ",PROG_DATE)
+!==============================================================================
+! Définition du message
+message "ANSIX12/004010/830.msg" receiving
+
+!base "syslog.cfg" SYSLOG
+!base "edisend.cfg" EDISEND
+!base "SUPPLIERS.cfg" SUPPLIERS
+!base "CODEPH.cfg" CODEPH
+
+! Appel de la librairie
+!#include "../include/generix_fct.inc"
+
+! Macros du fichier d'entrée-sortie
+#include "../include/PH_DELFOR_R.inc"
+!===========================================================
+
+! Section d'initialisation
+
+begin
+
+		nJOUR := 28
+		tTime := build("now + ",nJOUR,"d")
+		nDate_J := number(time(tTime, "%Y%m%d"))
+		log("Nombre de jours pour delivery plan : ",nJOUR,NL)
+		log("#|Dans ",nJOUR,"J, nous serons le ",nDate_J,"|",NL)
+		bNB := TRUE
+		
+    tDate := time("%Y%m%d%")
+	! DELNOMCCYYMMDDXXXXX	
+	PROCESS_ERRONEOUS := TRUE
+
+	tHDR_Sender_Id := "M0660V0"
+	tHDR_Recipient_Id := "PHGROUP"
+	
+!	PARTNER := find(sPARTNER, EDIID=pISA06)
+!	CODEPH := find(build(sHOME,"/CODEPH"), PARTNERNAME=PARTNER.NAME)
+	tCodeClient := "CODEPH_PHCODE"
+	log("SenderID : ",tHDR_Sender_Id,NL)
+	log("Code client : ",tCodeClient,NL)
+	
+	nMsg := 0
+	nErreur := 0
+	
+endbegin
+
+!===========================================================
+segment ST     ! M 1/1 Transaction Set Header
+
+	nMsg++
+	if nMsg > 1 then
+		flush(0,0,NL)
+	endif
+	
+	bfInitialise()
+	bfInitialise_HDR()
+	bfInitialise_SHT()
+	bfInitialise_LIN()
+	bfInitialise_SCH()
+
+	tHDR_Id := "HDR"
+	tHDR_Sender_Id := "M0660V0"
+	tHDR_Recipient_Identification := "PHGROUP"
+	
+	if not valid(MESSAGE) then
+		log(NL, "** ERREUR : Message invalide **",NL)
+		edierrorlist(MESSAGE)
+		edierrordump(MESSAGE)
+		nextmessage
+	endif
+	if eST01 = "830" then
+		tHDR_Doc_Code := "241"   ! M ID3..3 Transaction Set Identifier Code (143)
+	endif 
+!  eST02   ! M AN4..9 Transaction Set Control Number (329)
+
+endsegment
+
+segment BFR     ! M 1/1 Beginning Segment for Planning Schedule
+   if eBFR01 = "05" then
+		tHDR_Message_Function_Coded := "5"   ! M ID2..2 Transaction Set Purpose Code (353)
+	endif
+!   eBFR02   ! C AN1..30 Reference Identification (127)
+   tHDR_Doc_Number := build(eBFR03,nMsg:R02)   ! C AN1..30 Release Number (328)
+!   eBFR04   ! M ID2..2 Schedule Type Qualifier (675)
+!   eBFR05   ! M ID1..1 Schedule Quantity Qualifier (676)
+!   eBFR06   ! M DT8..8 Date (373)
+!   eBFR07   ! C DT8..8 Date (373)
+   tHDR_Doc_datetime := eBFR08   ! M DT8..8 Date (373)
+!   eBFR09   ! C DT8..8 Date (373)
+!   eBFR10   ! C AN1..30 Contract Number (367)
+!   eBFR11   ! C AN1..22 Purchase Order Number (324)
+!   eBFR12   ! C ID2..2 Planning Schedule Type Code (783)
+!   eBFR13   ! C ID1..2 Action Code (306)
+	bHDR := TRUE
+endsegment
+/*
+segment XPO     ! C 1/999 Preassigned Purchase Order Numbers
+   eXPO01   ! M AN1..22 Purchase Order Number (324)
+   eXPO02   ! C AN1..22 Purchase Order Number (324)
+   eXPO03   ! C ID1..2 Identification Code Qualifier (66)
+   eXPO04   ! C AN2..80 Identification Code (67)
+
+endsegment
+
+segment CUR     ! C 1/1 Currency
+   eCUR01   ! M ID2..3 Entity Identifier Code (98)
+   eCUR02   ! M ID3..3 Currency Code (100)
+   eCUR03   ! C R4..10 Exchange Rate (280)
+   eCUR04   ! C ID2..3 Entity Identifier Code (98)
+   eCUR05   ! C ID3..3 Currency Code (100)
+   eCUR06   ! C ID3..3 Currency Market/Exchange Code (669)
+   eCUR07   ! C ID3..3 Date/Time Qualifier (374)
+   eCUR08   ! C DT8..8 Date (373)
+   eCUR09   ! C TM4..8 Time (337)
+   eCUR10   ! C ID3..3 Date/Time Qualifier (374)
+   eCUR11   ! C DT8..8 Date (373)
+   eCUR12   ! C TM4..8 Time (337)
+   eCUR13   ! C ID3..3 Date/Time Qualifier (374)
+   eCUR14   ! C DT8..8 Date (373)
+   eCUR15   ! C TM4..8 Time (337)
+   eCUR16   ! C ID3..3 Date/Time Qualifier (374)
+   eCUR17   ! C DT8..8 Date (373)
+   eCUR18   ! C TM4..8 Time (337)
+   eCUR19   ! C ID3..3 Date/Time Qualifier (374)
+   eCUR20   ! C DT8..8 Date (373)
+   eCUR21   ! C TM4..8 Time (337)
+
+endsegment
+
+segment REF     ! C 1/12 Reference Identification
+   eREF01   ! M ID2..3 Reference Identification Qualifier (128)
+   eREF02   ! C AN1..30 Reference Identification (127)
+   eREF03   ! C AN1..80 Description (352)
+   ! REF04 C Reference Identifier (C040)
+   eREF04.C04001   ! M ID2..3 Reference Identification Qualifier (128)
+   eREF04.C04002   ! M AN1..30 Reference Identification (127)
+   eREF04.C04003   ! C ID2..3 Reference Identification Qualifier (128)
+   eREF04.C04004   ! C AN1..30 Reference Identification (127)
+   eREF04.C04005   ! C ID2..3 Reference Identification Qualifier (128)
+   eREF04.C04006   ! C AN1..30 Reference Identification (127)
+
+endsegment
+
+segment PER     ! C 1/3 Administrative Communications Contact
+   ePER01   ! M ID2..2 Contact Function Code (366)
+   ePER02   ! C AN1..60 Name (93)
+   ePER03   ! C ID2..2 Communication Number Qualifier (365)
+   ePER04   ! C AN1..80 Communication Number (364)
+   ePER05   ! C ID2..2 Communication Number Qualifier (365)
+   ePER06   ! C AN1..80 Communication Number (364)
+   ePER07   ! C ID2..2 Communication Number Qualifier (365)
+   ePER08   ! C AN1..80 Communication Number (364)
+   ePER09   ! C AN1..20 Contact Inquiry Reference (443)
+
+endsegment
+
+segment TAX     ! C 1/3 Tax Reference
+   eTAX01   ! C AN1..20 Tax Identification Number (325)
+   eTAX02   ! C ID1..2 Location Qualifier (309)
+   eTAX03   ! C AN1..30 Location Identifier (310)
+   eTAX04   ! C ID1..2 Location Qualifier (309)
+   eTAX05   ! C AN1..30 Location Identifier (310)
+   eTAX06   ! C ID1..2 Location Qualifier (309)
+   eTAX07   ! C AN1..30 Location Identifier (310)
+   eTAX08   ! C ID1..2 Location Qualifier (309)
+   eTAX09   ! C AN1..30 Location Identifier (310)
+   eTAX10   ! C ID1..2 Location Qualifier (309)
+   eTAX11   ! C AN1..30 Location Identifier (310)
+   eTAX12   ! C ID1..1 Tax Exempt Code (441)
+   eTAX13   ! C ID1..1 Customs Entry Type Group Code (1179)
+
+endsegment
+
+segment FOB     ! C 1/1 F.O.B. Related Instructions
+   eFOB01   ! M ID2..2 Shipment Method of Payment (146)
+   eFOB02   ! C ID1..2 Location Qualifier (309)
+   eFOB03   ! C AN1..80 Description (352)
+   eFOB04   ! C ID2..2 Transportation Terms Qualifier Code (334)
+   eFOB05   ! C ID3..3 Transportation Terms Code (335)
+   eFOB06   ! C ID1..2 Location Qualifier (309)
+   eFOB07   ! C AN1..80 Description (352)
+   eFOB08   ! C ID2..2 Risk of Loss Code (54)
+   eFOB09   ! C AN1..80 Description (352)
+
+endsegment
+
+segment CTP     ! C 1/25 Pricing Information
+   eCTP01   ! C ID2..2 Class of Trade Code (687)
+   eCTP02   ! C ID3..3 Price Identifier Code (236)
+   eCTP03   ! C R1..17 Unit Price (212)
+   eCTP04   ! C R1..15 Quantity (380)
+   ! CTP05 C Composite Unit of Measure (C001)
+   eCTP05.C00101   ! M ID2..2 Unit or Basis for Measurement Code (355)
+   eCTP05.C00102   ! C R1..15 Exponent (1018)
+   eCTP05.C00103   ! C R1..10 Multiplier (649)
+   eCTP05.C00104   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eCTP05.C00105   ! C R1..15 Exponent (1018)
+   eCTP05.C00106   ! C R1..10 Multiplier (649)
+   eCTP05.C00107   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eCTP05.C00108   ! C R1..15 Exponent (1018)
+   eCTP05.C00109   ! C R1..10 Multiplier (649)
+   eCTP05.C00110   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eCTP05.C00111   ! C R1..15 Exponent (1018)
+   eCTP05.C00112   ! C R1..10 Multiplier (649)
+   eCTP05.C00113   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eCTP05.C00114   ! C R1..15 Exponent (1018)
+   eCTP05.C00115   ! C R1..10 Multiplier (649)
+   eCTP06   ! C ID3..3 Price Multiplier Qualifier (648)
+   eCTP07   ! C R1..10 Multiplier (649)
+   eCTP08   ! C R1..18 Monetary Amount (782)
+   eCTP09   ! C ID2..2 Basis of Unit Price Code (639)
+   eCTP10   ! C AN1..10 Condition Value (499)
+   eCTP11   ! C N0,1..2 Multiple Price Quantity (289)
+
+endsegment
+
+segment SAC     ! C 1/25 Service
+   eSAC01   ! M ID1..1 Allowance or Charge Indicator (248)
+   eSAC02   ! C ID4..4 Service (1300)
+   eSAC03   ! C ID2..2 Agency Qualifier Code (559)
+   eSAC04   ! C AN1..10 Agency Service (1301)
+   eSAC05   ! C N2,1..15 Amount (610)
+   eSAC06   ! C ID1..1 Allowance/Charge Percent Qualifier (378)
+   eSAC07   ! C R1..6 Percent (332)
+   eSAC08   ! C R1..9 Rate (118)
+   eSAC09   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eSAC10   ! C R1..15 Quantity (380)
+   eSAC11   ! C R1..15 Quantity (380)
+   eSAC12   ! C ID2..2 Allowance or Charge Method of Handling Code (331)
+   eSAC13   ! C AN1..30 Reference Identification (127)
+   eSAC14   ! C AN1..20 Option Number (770)
+   eSAC15   ! C AN1..80 Description (352)
+   eSAC16   ! C ID2..3 Language Code (819)
+
+endsegment
+
+segment CSH     ! C 1/1 Sales Requirements
+   eCSH01   ! C ID1..2 Sales Requirement Code (563)
+   eCSH02   ! C ID1..2 Action Code (306)
+   eCSH03   ! C N2,1..15 Amount (610)
+   eCSH04   ! C AN1..35 Account Number (508)
+   eCSH05   ! C DT8..8 Date (373)
+   eCSH06   ! C ID2..2 Agency Qualifier Code (559)
+   eCSH07   ! C ID2..10 Special Services Code (560)
+   eCSH08   ! C ID1..2 Product/Service Substitution Code (566)
+   eCSH09   ! C R1..10 Percent (954)
+   eCSH10   ! C ID1..2 Percent Qualifier (1004)
+
+endsegment
+
+segment ITD     ! C 1/2 Terms of Sale/Deferred Terms of Sale
+   eITD01   ! C ID2..2 Terms Type Code (336)
+   eITD02   ! C ID1..2 Terms Basis Date Code (333)
+   eITD03   ! C R1..6 Terms Discount Percent (338)
+   eITD04   ! C DT8..8 Terms Discount Due Date (370)
+   eITD05   ! C N0,1..3 Terms Discount Days Due (351)
+   eITD06   ! C DT8..8 Terms Net Due Date (446)
+   eITD07   ! C N0,1..3 Terms Net Days (386)
+   eITD08   ! C N2,1..10 Terms Discount Amount (362)
+   eITD09   ! C DT8..8 Terms Deferred Due Date (388)
+   eITD10   ! C N2,1..10 Deferred Amount Due (389)
+   eITD11   ! C R1..5 Percent of Invoice Payable (342)
+   eITD12   ! C AN1..80 Description (352)
+   eITD13   ! C N0,1..2 Day of Month (765)
+   eITD14   ! C ID1..2 Payment Method Code (107)
+   eITD15   ! C R1..10 Percent (954)
+
+endsegment
+
+segment DTM     ! C 1/10 Date/Time Reference
+   eDTM01   ! M ID3..3 Date/Time Qualifier (374)
+   eDTM02   ! C DT8..8 Date (373)
+   eDTM03   ! C TM4..8 Time (337)
+   eDTM04   ! C ID2..2 Time Code (623)
+   eDTM05   ! C ID2..3 Date Time Period Format Qualifier (1250)
+   eDTM06   ! C AN1..35 Date Time Period (1251)
+
+endsegment
+
+segment PID     ! C 1/200 Product/Item Description
+   ePID01   ! M ID1..1 Item Description Type (349)
+   ePID02   ! C ID2..3 Product/Process Characteristic Code (750)
+   ePID03   ! C ID2..2 Agency Qualifier Code (559)
+   ePID04   ! C AN1..12 Product Description Code (751)
+   ePID05   ! C AN1..80 Description (352)
+   ePID06   ! C ID2..2 Surface/Layer/Position Code (752)
+   ePID07   ! C AN1..15 Source Subqualifier (822)
+   ePID08   ! C ID1..1 Yes/No Condition or Response Code (1073)
+   ePID09   ! C ID2..3 Language Code (819)
+
+endsegment
+
+segment MEA     ! C 1/40 Measurements
+   eMEA01   ! C ID2..2 Measurement Reference ID Code (737)
+   eMEA02   ! C ID1..3 Measurement Qualifier (738)
+   eMEA03   ! C R1..20 Measurement Value (739)
+   ! MEA04 C Composite Unit of Measure (C001)
+   eMEA04.C00101   ! M ID2..2 Unit or Basis for Measurement Code (355)
+   eMEA04.C00102   ! C R1..15 Exponent (1018)
+   eMEA04.C00103   ! C R1..10 Multiplier (649)
+   eMEA04.C00104   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eMEA04.C00105   ! C R1..15 Exponent (1018)
+   eMEA04.C00106   ! C R1..10 Multiplier (649)
+   eMEA04.C00107   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eMEA04.C00108   ! C R1..15 Exponent (1018)
+   eMEA04.C00109   ! C R1..10 Multiplier (649)
+   eMEA04.C00110   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eMEA04.C00111   ! C R1..15 Exponent (1018)
+   eMEA04.C00112   ! C R1..10 Multiplier (649)
+   eMEA04.C00113   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eMEA04.C00114   ! C R1..15 Exponent (1018)
+   eMEA04.C00115   ! C R1..10 Multiplier (649)
+   eMEA05   ! C R1..20 Range Minimum (740)
+   eMEA06   ! C R1..20 Range Maximum (741)
+   eMEA07   ! C ID2..2 Measurement Significance Code (935)
+   eMEA08   ! C ID2..2 Measurement Attribute Code (936)
+   eMEA09   ! C ID2..2 Surface/Layer/Position Code (752)
+   eMEA10   ! C ID2..4 Measurement Method or Device (1373)
+
+endsegment
+
+segment PWK     ! C 1/25 Paperwork
+   ePWK01   ! M ID2..2 Report Type Code (755)
+   ePWK02   ! C ID1..2 Report Transmission Code (756)
+   ePWK03   ! C N0,1..2 Report Copies Needed (757)
+   ePWK04   ! C ID2..3 Entity Identifier Code (98)
+   ePWK05   ! C ID1..2 Identification Code Qualifier (66)
+   ePWK06   ! C AN2..80 Identification Code (67)
+   ePWK07   ! C AN1..80 Description (352)
+   ! PWK08 C Actions Indicated (C002)
+   ePWK08.C00201   ! M ID1..2 Paperwork/Report Action Code (704)
+   ePWK08.C00202   ! C ID1..2 Paperwork/Report Action Code (704)
+   ePWK08.C00203   ! C ID1..2 Paperwork/Report Action Code (704)
+   ePWK08.C00204   ! C ID1..2 Paperwork/Report Action Code (704)
+   ePWK08.C00205   ! C ID1..2 Paperwork/Report Action Code (704)
+   ePWK09   ! C ID1..2 Request Category Code (1525)
+
+endsegment
+
+segment PKG     ! C 1/25 Marking
+   ePKG01   ! C ID1..1 Item Description Type (349)
+   ePKG02   ! C ID1..5 Packaging Characteristic Code (753)
+   ePKG03   ! C ID2..2 Agency Qualifier Code (559)
+   ePKG04   ! C AN1..7 Packaging Description Code (754)
+   ePKG05   ! C AN1..80 Description (352)
+   ePKG06   ! C ID2..2 Unit Load Option Code (400)
+
+endsegment
+
+segment TD1     ! C 1/2 Carrier Details (Quantity and Weight)
+   eTD101   ! C AN3..5 Packaging Code (103)
+   eTD102   ! C N0,1..7 Lading Quantity (80)
+   eTD103   ! C ID1..1 Commodity Code Qualifier (23)
+   eTD104   ! C AN1..30 Commodity Code (22)
+   eTD105   ! C AN1..50 Lading Description (79)
+   eTD106   ! C ID1..2 Weight Qualifier (187)
+   eTD107   ! C R1..10 Weight (81)
+   eTD108   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eTD109   ! C R1..8 Volume (183)
+   eTD110   ! C ID2..2 Unit or Basis for Measurement Code (355)
+
+endsegment
+
+segment TD5     ! C 1/12 Carrier Details (Routing Sequence/Transit Time)
+   eTD501   ! C ID1..2 Routing Sequence Code (133)
+   eTD502   ! C ID1..2 Identification Code Qualifier (66)
+   eTD503   ! C AN2..80 Identification Code (67)
+   eTD504   ! C ID1..2 Transportation Method/Type Code (91)
+   eTD505   ! C AN1..35 Routing (387)
+   eTD506   ! C ID2..2 Shipment/Order Status Code (368)
+   eTD507   ! C ID1..2 Location Qualifier (309)
+   eTD508   ! C AN1..30 Location Identifier (310)
+   eTD509   ! C ID2..2 Transit Direction Code (731)
+   eTD510   ! C ID2..2 Transit Time Direction Qualifier (732)
+   eTD511   ! C R1..4 Transit Time (733)
+   eTD512   ! C ID2..2 Service Level Code (284)
+   eTD513   ! C ID2..2 Service Level Code (284)
+   eTD514   ! C ID2..2 Service Level Code (284)
+   eTD515   ! C ID2..3 Country Code (26)
+
+endsegment
+
+segment TD3     ! C 1/12 Carrier Details (Equipment)
+   eTD301   ! C ID2..2 Equipment Description Code (40)
+   eTD302   ! C AN1..4 Equipment Initial (206)
+   eTD303   ! C AN1..10 Equipment Number (207)
+   eTD304   ! C ID1..2 Weight Qualifier (187)
+   eTD305   ! C R1..10 Weight (81)
+   eTD306   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eTD307   ! C ID1..1 Ownership Code (102)
+   eTD308   ! C ID2..2 Seal Status Code (407)
+   eTD309   ! C AN2..15 Seal Number (225)
+   eTD310   ! C ID4..4 Equipment Type (24)
+
+endsegment
+
+segment TD4     ! C 1/5 Carrier Details (Special Handling
+   eTD401   ! C ID2..3 Special Handling Code (152)
+   eTD402   ! C ID1..1 Hazardous Material Code Qualifier (208)
+   eTD403   ! C AN1..4 Hazardous Material Class Code (209)
+   eTD404   ! C AN1..80 Description (352)
+   eTD405   ! C ID1..1 Yes/No Condition or Response Code (1073)
+
+endsegment
+
+segment MAN     ! C 1/10 Marks and Numbers
+   eMAN01   ! M ID1..2 Marks and Numbers Qualifier (88)
+   eMAN02   ! M AN1..48 Marks and Numbers (87)
+   eMAN03   ! C AN1..48 Marks and Numbers (87)
+   eMAN04   ! C ID1..2 Marks and Numbers Qualifier (88)
+   eMAN05   ! C AN1..48 Marks and Numbers (87)
+   eMAN06   ! C AN1..48 Marks and Numbers (87)
+
+endsegment
+*/
+! Groupe g1 : C 1/200 
+segment N1 g1     ! M 1/1 Name
+	tN101 := eN101
+	if tN101 = "ST" then
+		!	eN101   ! M ID2..3 Entity Identifier Code (98)
+	   tSHT_Ship_to_Name := substr(eN102,1,35)   ! C AN1..60 Name (93)
+		!   eN103   ! C ID1..2 Identification Code Qualifier (66)
+	   tSHT_Ship_to_Code := substr(eN104,1,35)   ! C AN2..80 Identification Code (67)
+	   tHDR_Sender_Id := substr(eN104,1,35)
+		!   eN105   ! C ID2..2 Entity Relationship Code (706)
+		!   eN106   ! C ID2..3 Entity Identifier Code (98)
+	endif
+endsegment
+
+segment N2 g1     ! C 1/2 Additional Name Information
+	if tN101 = "ST" then
+		tSHT_Ship_to_Street1 := eN201   ! M AN1..60 Name (93)
+	!   eN202   ! C AN1..60 Name (93)
+	endif
+endsegment
+
+segment N3 g1     ! C 1/2 Address Information
+	if tN101 = "ST" then
+		tSHT_Ship_to_Street2 := eN301   ! M AN1..55 Address Information (166)
+	!   eN302   ! C AN1..55 Address Information (166)
+	endif
+endsegment
+
+segment N4 g1     ! C 1/1 Geographic Location
+	if tN101 = "ST" then
+		tSHT_Ship_to_City := eN401   ! C AN2..30 City Name (19)
+		!   eN402   ! C ID2..2 State or Province Code (156)
+		tSHT_Ship_to_Postal_Code := substr(eN403,1,10)   ! C ID3..15 Postal Code (116)
+		tSHT_Ship_to_Country := eN404   ! C ID2..3 Country Code (26)
+		!   eN405   ! C ID1..2 Location Qualifier (309)
+		!   eN406   ! C AN1..30 Location Identifier (310)
+		tSHT_Counter := "1"
+		tSHT_Ship_to_Street3 := build(tSHT_Ship_to_Street1," ",tSHT_Ship_to_Street2)
+		tSHT_Ship_to_Street := substr(tSHT_Ship_to_Street3,1,70)
+		if bHDR then
+			bfBuild_HDR()
+			bHDR := FALSE
+		endif
+		bfBuild_SHT()
+	endif
+endsegment
+/*
+segment REF g1     ! C 1/12 Reference Identification
+   eREF01   ! M ID2..3 Reference Identification Qualifier (128)
+   eREF02   ! C AN1..30 Reference Identification (127)
+   eREF03   ! C AN1..80 Description (352)
+   ! REF04 C Reference Identifier (C040)
+   eREF04.C04001   ! M ID2..3 Reference Identification Qualifier (128)
+   eREF04.C04002   ! M AN1..30 Reference Identification (127)
+   eREF04.C04003   ! C ID2..3 Reference Identification Qualifier (128)
+   eREF04.C04004   ! C AN1..30 Reference Identification (127)
+   eREF04.C04005   ! C ID2..3 Reference Identification Qualifier (128)
+   eREF04.C04006   ! C AN1..30 Reference Identification (127)
+
+endsegment
+
+segment PER g1     ! C 1/3 Administrative Communications Contact
+   ePER01   ! M ID2..2 Contact Function Code (366)
+   ePER02   ! C AN1..60 Name (93)
+   ePER03   ! C ID2..2 Communication Number Qualifier (365)
+   ePER04   ! C AN1..80 Communication Number (364)
+   ePER05   ! C ID2..2 Communication Number Qualifier (365)
+   ePER06   ! C AN1..80 Communication Number (364)
+   ePER07   ! C ID2..2 Communication Number Qualifier (365)
+   ePER08   ! C AN1..80 Communication Number (364)
+   ePER09   ! C AN1..20 Contact Inquiry Reference (443)
+
+endsegment
+
+segment FOB g1     ! C 1/1 F.O.B. Related Instructions
+   eFOB01   ! M ID2..2 Shipment Method of Payment (146)
+   eFOB02   ! C ID1..2 Location Qualifier (309)
+   eFOB03   ! C AN1..80 Description (352)
+   eFOB04   ! C ID2..2 Transportation Terms Qualifier Code (334)
+   eFOB05   ! C ID3..3 Transportation Terms Code (335)
+   eFOB06   ! C ID1..2 Location Qualifier (309)
+   eFOB07   ! C AN1..80 Description (352)
+   eFOB08   ! C ID2..2 Risk of Loss Code (54)
+   eFOB09   ! C AN1..80 Description (352)
+
+endsegment
+
+! Groupe g2 : C 1/999 
+segment LM g2     ! M 1/1 Code Source Information
+   eLM01   ! M ID2..2 Agency Qualifier Code (559)
+   eLM02   ! C AN1..15 Source Subqualifier (822)
+
+endsegment
+
+segment LQ g2     ! M 1/100 Industry Code
+   eLQ01   ! C ID1..3 Code List Qualifier Code (1270)
+   eLQ02   ! C AN1..30 Industry Code (1271)
+
+endsegment
+*/
+! Groupe g3 : M 1/999 
+segment LIN g3     ! M 1/1 Item Identification
+	nSCH := 0
+	nLIN++
+	bBuilt_LIN := TRUE
+	tLineNumber := build(nLIN:R01) ! Correction 20130628
+!   tLIN_Line_Item_Number1 := build(number(eLIN01))
+	tLIN_Line_Item_Number := tLineNumber !substr(tLIN_Line_Item_Number1,1,6) ! C AN1..20 Assigned Identification (350)
+	switch eLIN02
+		case "BP":
+			tLIN_Item_Customer_Number := substr(eLIN03,1,35)   ! M AN1..48 Product/Service ID (234)
+		case "CR":
+			tLIN_Item_Purchase_order_Number := substr(eLIN03,1,35)
+		case "VP":
+			tLIN_Item_Vendor_part_Number := substr(eLIN03,1,35)
+		case "PD":
+			tLIN_Item_Description := eLIN03
+	endswitch
+	
+	switch eLIN04
+		case "BP":
+			tLIN_Item_Customer_Number := substr(eLIN05,1,35)   ! M AN1..48 Product/Service ID (234)
+		case "CR":
+			tLIN_Item_Purchase_order_Number := substr(eLIN05,1,35)
+		case "VP":
+			tLIN_Item_Vendor_part_Number := substr(eLIN05,1,35)
+		case "PD":
+			tLIN_Item_Description := eLIN05
+	endswitch
+		
+	switch eLIN06
+		case "BP":
+			tLIN_Item_Customer_Number := substr(eLIN07,1,35)   ! M AN1..48 Product/Service ID (234)
+		case "CR":
+			tLIN_Item_Purchase_order_Number := substr(eLIN07,1,35)
+		case "VP":
+			tLIN_Item_Vendor_part_Number := substr(eLIN07,1,35)
+		case "PD":
+			tLIN_Item_Description := eLIN07
+	endswitch
+	
+	switch eLIN08
+		case "BP":
+			tLIN_Item_Customer_Number := substr(eLIN09,1,35)   ! M AN1..48 Product/Service ID (234)
+		case "CR":
+			tLIN_Item_Purchase_order_Number := substr(eLIN09,1,35)
+		case "VP":
+			tLIN_Item_Vendor_part_Number := substr(eLIN09,1,35)
+		case "PD":
+			tLIN_Item_Description := eLIN09
+	endswitch
+	
+	switch eLIN10
+		case "BP":
+			tLIN_Item_Customer_Number := substr(eLIN11,1,35)   ! M AN1..48 Product/Service ID (234)
+		case "CR":
+			tLIN_Item_Purchase_order_Number := substr(eLIN11,1,35)
+		case "VP":
+			tLIN_Item_Vendor_part_Number := substr(eLIN11,1,35)
+		case "PD":
+			tLIN_Item_Description := eLIN11
+	endswitch
+
+/*
+   eLIN10   ! C ID2..2 Product/Service ID Qualifier (235)
+   eLIN11   ! C AN1..48 Product/Service ID (234)
+   eLIN12   ! C ID2..2 Product/Service ID Qualifier (235)
+   eLIN13   ! C AN1..48 Product/Service ID (234)
+   eLIN14   ! C ID2..2 Product/Service ID Qualifier (235)
+   eLIN15   ! C AN1..48 Product/Service ID (234)
+   eLIN16   ! C ID2..2 Product/Service ID Qualifier (235)
+   eLIN17   ! C AN1..48 Product/Service ID (234)
+   eLIN18   ! C ID2..2 Product/Service ID Qualifier (235)
+   eLIN19   ! C AN1..48 Product/Service ID (234)
+   eLIN20   ! C ID2..2 Product/Service ID Qualifier (235)
+   eLIN21   ! C AN1..48 Product/Service ID (234)
+   eLIN22   ! C ID2..2 Product/Service ID Qualifier (235)
+   eLIN23   ! C AN1..48 Product/Service ID (234)
+   eLIN24   ! C ID2..2 Product/Service ID Qualifier (235)
+   eLIN25   ! C AN1..48 Product/Service ID (234)
+   eLIN26   ! C ID2..2 Product/Service ID Qualifier (235)
+   eLIN27   ! C AN1..48 Product/Service ID (234)
+   eLIN28   ! C ID2..2 Product/Service ID Qualifier (235)
+   eLIN29   ! C AN1..48 Product/Service ID (234)
+   eLIN30   ! C ID2..2 Product/Service ID Qualifier (235)
+   eLIN31   ! C AN1..48 Product/Service ID (234)
+*/
+endsegment
+/* Pas de prix dans les DELFOR
+segment UIT g3     ! C 1/1 Unit Detail
+   ! UIT01 M Composite Unit of Measure (C001)
+   eUIT01.C00101   ! M ID2..2 Unit or Basis for Measurement Code (355)
+   eUIT01.C00102   ! C R1..15 Exponent (1018)
+   eUIT01.C00103   ! C R1..10 Multiplier (649)
+   eUIT01.C00104   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eUIT01.C00105   ! C R1..15 Exponent (1018)
+   eUIT01.C00106   ! C R1..10 Multiplier (649)
+   eUIT01.C00107   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eUIT01.C00108   ! C R1..15 Exponent (1018)
+   eUIT01.C00109   ! C R1..10 Multiplier (649)
+   eUIT01.C00110   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eUIT01.C00111   ! C R1..15 Exponent (1018)
+   eUIT01.C00112   ! C R1..10 Multiplier (649)
+   eUIT01.C00113   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eUIT01.C00114   ! C R1..15 Exponent (1018)
+   eUIT01.C00115   ! C R1..10 Multiplier (649)
+   eUIT02   ! C R1..17 Unit Price (212)
+   eUIT03   ! C ID2..2 Basis of Unit Price Code (639)
+
+endsegment
+
+segment DTM g3     ! C 1/10 Date/Time Reference
+   eDTM01   ! M ID3..3 Date/Time Qualifier (374)
+   eDTM02   ! C DT8..8 Date (373)
+   eDTM03   ! C TM4..8 Time (337)
+   eDTM04   ! C ID2..2 Time Code (623)
+   eDTM05   ! C ID2..3 Date Time Period Format Qualifier (1250)
+   eDTM06   ! C AN1..35 Date Time Period (1251)
+
+endsegment
+
+segment CUR g3     ! C 1/1 Currency
+   eCUR01   ! M ID2..3 Entity Identifier Code (98)
+   eCUR02   ! M ID3..3 Currency Code (100)
+   eCUR03   ! C R4..10 Exchange Rate (280)
+   eCUR04   ! C ID2..3 Entity Identifier Code (98)
+   eCUR05   ! C ID3..3 Currency Code (100)
+   eCUR06   ! C ID3..3 Currency Market/Exchange Code (669)
+   eCUR07   ! C ID3..3 Date/Time Qualifier (374)
+   eCUR08   ! C DT8..8 Date (373)
+   eCUR09   ! C TM4..8 Time (337)
+   eCUR10   ! C ID3..3 Date/Time Qualifier (374)
+   eCUR11   ! C DT8..8 Date (373)
+   eCUR12   ! C TM4..8 Time (337)
+   eCUR13   ! C ID3..3 Date/Time Qualifier (374)
+   eCUR14   ! C DT8..8 Date (373)
+   eCUR15   ! C TM4..8 Time (337)
+   eCUR16   ! C ID3..3 Date/Time Qualifier (374)
+   eCUR17   ! C DT8..8 Date (373)
+   eCUR18   ! C TM4..8 Time (337)
+   eCUR19   ! C ID3..3 Date/Time Qualifier (374)
+   eCUR20   ! C DT8..8 Date (373)
+   eCUR21   ! C TM4..8 Time (337)
+
+endsegment
+*/
+/*
+segment PO3 g3     ! C 1/25 Additional Item Detail
+   ePO301   ! M ID2..2 Change Reason Code (371)
+   ePO302   ! C DT8..8 Date (373)
+   ePO303   ! C ID3..3 Price Identifier Code (236)
+   ePO304   ! C R1..17 Unit Price (212)
+   ePO305   ! C ID2..2 Basis of Unit Price Code (639)
+   ePO306   ! M R1..15 Quantity (380)
+   ePO307   ! M ID2..2 Unit or Basis for Measurement Code (355)
+   ePO308   ! C AN1..80 Description (352)
+
+endsegment
+
+segment CTP g3     ! C 1/25 Pricing Information
+   eCTP01   ! C ID2..2 Class of Trade Code (687)
+   eCTP02   ! C ID3..3 Price Identifier Code (236)
+   eCTP03   ! C R1..17 Unit Price (212)
+   eCTP04   ! C R1..15 Quantity (380)
+   ! CTP05 C Composite Unit of Measure (C001)
+   eCTP05.C00101   ! M ID2..2 Unit or Basis for Measurement Code (355)
+   eCTP05.C00102   ! C R1..15 Exponent (1018)
+   eCTP05.C00103   ! C R1..10 Multiplier (649)
+   eCTP05.C00104   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eCTP05.C00105   ! C R1..15 Exponent (1018)
+   eCTP05.C00106   ! C R1..10 Multiplier (649)
+   eCTP05.C00107   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eCTP05.C00108   ! C R1..15 Exponent (1018)
+   eCTP05.C00109   ! C R1..10 Multiplier (649)
+   eCTP05.C00110   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eCTP05.C00111   ! C R1..15 Exponent (1018)
+   eCTP05.C00112   ! C R1..10 Multiplier (649)
+   eCTP05.C00113   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eCTP05.C00114   ! C R1..15 Exponent (1018)
+   eCTP05.C00115   ! C R1..10 Multiplier (649)
+   eCTP06   ! C ID3..3 Price Multiplier Qualifier (648)
+   eCTP07   ! C R1..10 Multiplier (649)
+   eCTP08   ! C R1..18 Monetary Amount (782)
+   eCTP09   ! C ID2..2 Basis of Unit Price Code (639)
+   eCTP10   ! C AN1..10 Condition Value (499)
+   eCTP11   ! C N0,1..2 Multiple Price Quantity (289)
+
+endsegment
+
+segment PID g3     ! C 1/1000 Product/Item Description
+   ePID01   ! M ID1..1 Item Description Type (349)
+   ePID02   ! C ID2..3 Product/Process Characteristic Code (750)
+   ePID03   ! C ID2..2 Agency Qualifier Code (559)
+   ePID04   ! C AN1..12 Product Description Code (751)
+   ePID05   ! C AN1..80 Description (352)
+   ePID06   ! C ID2..2 Surface/Layer/Position Code (752)
+   ePID07   ! C AN1..15 Source Subqualifier (822)
+   ePID08   ! C ID1..1 Yes/No Condition or Response Code (1073)
+   ePID09   ! C ID2..3 Language Code (819)
+
+endsegment
+
+segment MEA g3     ! C 1/40 Measurements
+   eMEA01   ! C ID2..2 Measurement Reference ID Code (737)
+   eMEA02   ! C ID1..3 Measurement Qualifier (738)
+   eMEA03   ! C R1..20 Measurement Value (739)
+   ! MEA04 C Composite Unit of Measure (C001)
+   eMEA04.C00101   ! M ID2..2 Unit or Basis for Measurement Code (355)
+   eMEA04.C00102   ! C R1..15 Exponent (1018)
+   eMEA04.C00103   ! C R1..10 Multiplier (649)
+   eMEA04.C00104   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eMEA04.C00105   ! C R1..15 Exponent (1018)
+   eMEA04.C00106   ! C R1..10 Multiplier (649)
+   eMEA04.C00107   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eMEA04.C00108   ! C R1..15 Exponent (1018)
+   eMEA04.C00109   ! C R1..10 Multiplier (649)
+   eMEA04.C00110   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eMEA04.C00111   ! C R1..15 Exponent (1018)
+   eMEA04.C00112   ! C R1..10 Multiplier (649)
+   eMEA04.C00113   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eMEA04.C00114   ! C R1..15 Exponent (1018)
+   eMEA04.C00115   ! C R1..10 Multiplier (649)
+   eMEA05   ! C R1..20 Range Minimum (740)
+   eMEA06   ! C R1..20 Range Maximum (741)
+   eMEA07   ! C ID2..2 Measurement Significance Code (935)
+   eMEA08   ! C ID2..2 Measurement Attribute Code (936)
+   eMEA09   ! C ID2..2 Surface/Layer/Position Code (752)
+   eMEA10   ! C ID2..4 Measurement Method or Device (1373)
+
+endsegment
+
+segment PWK g3     ! C 1/25 Paperwork
+   ePWK01   ! M ID2..2 Report Type Code (755)
+   ePWK02   ! C ID1..2 Report Transmission Code (756)
+   ePWK03   ! C N0,1..2 Report Copies Needed (757)
+   ePWK04   ! C ID2..3 Entity Identifier Code (98)
+   ePWK05   ! C ID1..2 Identification Code Qualifier (66)
+   ePWK06   ! C AN2..80 Identification Code (67)
+   ePWK07   ! C AN1..80 Description (352)
+   ! PWK08 C Actions Indicated (C002)
+   ePWK08.C00201   ! M ID1..2 Paperwork/Report Action Code (704)
+   ePWK08.C00202   ! C ID1..2 Paperwork/Report Action Code (704)
+   ePWK08.C00203   ! C ID1..2 Paperwork/Report Action Code (704)
+   ePWK08.C00204   ! C ID1..2 Paperwork/Report Action Code (704)
+   ePWK08.C00205   ! C ID1..2 Paperwork/Report Action Code (704)
+   ePWK09   ! C ID1..2 Request Category Code (1525)
+
+endsegment
+
+segment PKG g3     ! C 1/25 Marking
+   ePKG01   ! C ID1..1 Item Description Type (349)
+   ePKG02   ! C ID1..5 Packaging Characteristic Code (753)
+   ePKG03   ! C ID2..2 Agency Qualifier Code (559)
+   ePKG04   ! C AN1..7 Packaging Description Code (754)
+   ePKG05   ! C AN1..80 Description (352)
+   ePKG06   ! C ID2..2 Unit Load Option Code (400)
+
+endsegment
+
+segment PO4 g3     ! C 1/1 Item Physical Details
+   ePO401   ! C N0,1..6 Pack (356)
+   ePO402   ! C R1..8 Size (357)
+   ePO403   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   ePO404   ! C AN3..5 Packaging Code (103)
+   ePO405   ! C ID1..2 Weight Qualifier (187)
+   ePO406   ! C R1..9 Gross Weight per Pack (384)
+   ePO407   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   ePO408   ! C R1..9 Gross Volume per Pack (385)
+   ePO409   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   ePO410   ! C R1..8 Length (82)
+   ePO411   ! C R1..8 Width (189)
+   ePO412   ! C R1..8 Height (65)
+   ePO413   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   ePO414   ! C N0,1..6 Inner Pack (810)
+   ePO415   ! C ID2..2 Surface/Layer/Position Code (752)
+   ePO416   ! C AN1..20 Assigned Identification (350)
+   ePO417   ! C AN1..20 Assigned Identification (350)
+   ePO418   ! C N0,1..9 Number (1470)
+
+endsegment
+
+segment PRS g3     ! C 1/1 Part Release Status
+   ePRS01   ! M ID1..2 Part Release Status Code (682)
+   ePRS02   ! C AN1..80 Description (352)
+
+endsegment
+*/
+
+/* Référence pour Departement number
+segment REF g3     ! C 1/12 Reference Identification
+   eREF01   ! M ID2..3 Reference Identification Qualifier (128)
+   eREF02   ! C AN1..30 Reference Identification (127)
+   eREF03   ! C AN1..80 Description (352)
+   ! REF04 C Reference Identifier (C040)
+   eREF04.C04001   ! M ID2..3 Reference Identification Qualifier (128)
+   eREF04.C04002   ! M AN1..30 Reference Identification (127)
+   eREF04.C04003   ! C ID2..3 Reference Identification Qualifier (128)
+   eREF04.C04004   ! C AN1..30 Reference Identification (127)
+   eREF04.C04005   ! C ID2..3 Reference Identification Qualifier (128)
+   eREF04.C04006   ! C AN1..30 Reference Identification (127)
+
+endsegment
+*/
+/*
+segment PER g3     ! C 1/3 Administrative Communications Contact
+   ePER01   ! M ID2..2 Contact Function Code (366)
+   ePER02   ! C AN1..60 Name (93)
+   ePER03   ! C ID2..2 Communication Number Qualifier (365)
+   ePER04   ! C AN1..80 Communication Number (364)
+   ePER05   ! C ID2..2 Communication Number Qualifier (365)
+   ePER06   ! C AN1..80 Communication Number (364)
+   ePER07   ! C ID2..2 Communication Number Qualifier (365)
+   ePER08   ! C AN1..80 Communication Number (364)
+   ePER09   ! C AN1..20 Contact Inquiry Reference (443)
+
+endsegment
+
+segment SAC g3     ! C 1/25 Service
+   eSAC01   ! M ID1..1 Allowance or Charge Indicator (248)
+   eSAC02   ! C ID4..4 Service (1300)
+   eSAC03   ! C ID2..2 Agency Qualifier Code (559)
+   eSAC04   ! C AN1..10 Agency Service (1301)
+   eSAC05   ! C N2,1..15 Amount (610)
+   eSAC06   ! C ID1..1 Allowance/Charge Percent Qualifier (378)
+   eSAC07   ! C R1..6 Percent (332)
+   eSAC08   ! C R1..9 Rate (118)
+   eSAC09   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eSAC10   ! C R1..15 Quantity (380)
+   eSAC11   ! C R1..15 Quantity (380)
+   eSAC12   ! C ID2..2 Allowance or Charge Method of Handling Code (331)
+   eSAC13   ! C AN1..30 Reference Identification (127)
+   eSAC14   ! C AN1..20 Option Number (770)
+   eSAC15   ! C AN1..80 Description (352)
+   eSAC16   ! C ID2..3 Language Code (819)
+
+endsegment
+
+segment ITD g3     ! C 1/2 Terms of Sale/Deferred Terms of Sale
+   eITD01   ! C ID2..2 Terms Type Code (336)
+   eITD02   ! C ID1..2 Terms Basis Date Code (333)
+   eITD03   ! C R1..6 Terms Discount Percent (338)
+   eITD04   ! C DT8..8 Terms Discount Due Date (370)
+   eITD05   ! C N0,1..3 Terms Discount Days Due (351)
+   eITD06   ! C DT8..8 Terms Net Due Date (446)
+   eITD07   ! C N0,1..3 Terms Net Days (386)
+   eITD08   ! C N2,1..10 Terms Discount Amount (362)
+   eITD09   ! C DT8..8 Terms Deferred Due Date (388)
+   eITD10   ! C N2,1..10 Deferred Amount Due (389)
+   eITD11   ! C R1..5 Percent of Invoice Payable (342)
+   eITD12   ! C AN1..80 Description (352)
+   eITD13   ! C N0,1..2 Day of Month (765)
+   eITD14   ! C ID1..2 Payment Method Code (107)
+   eITD15   ! C R1..10 Percent (954)
+
+endsegment
+
+segment TAX g3     ! C 1/3 Tax Reference
+   eTAX01   ! C AN1..20 Tax Identification Number (325)
+   eTAX02   ! C ID1..2 Location Qualifier (309)
+   eTAX03   ! C AN1..30 Location Identifier (310)
+   eTAX04   ! C ID1..2 Location Qualifier (309)
+   eTAX05   ! C AN1..30 Location Identifier (310)
+   eTAX06   ! C ID1..2 Location Qualifier (309)
+   eTAX07   ! C AN1..30 Location Identifier (310)
+   eTAX08   ! C ID1..2 Location Qualifier (309)
+   eTAX09   ! C AN1..30 Location Identifier (310)
+   eTAX10   ! C ID1..2 Location Qualifier (309)
+   eTAX11   ! C AN1..30 Location Identifier (310)
+   eTAX12   ! C ID1..1 Tax Exempt Code (441)
+   eTAX13   ! C ID1..1 Customs Entry Type Group Code (1179)
+
+endsegment
+
+segment FOB g3     ! C 1/1 F.O.B. Related Instructions
+   eFOB01   ! M ID2..2 Shipment Method of Payment (146)
+   eFOB02   ! C ID1..2 Location Qualifier (309)
+   eFOB03   ! C AN1..80 Description (352)
+   eFOB04   ! C ID2..2 Transportation Terms Qualifier Code (334)
+   eFOB05   ! C ID3..3 Transportation Terms Code (335)
+   eFOB06   ! C ID1..2 Location Qualifier (309)
+   eFOB07   ! C AN1..80 Description (352)
+   eFOB08   ! C ID2..2 Risk of Loss Code (54)
+   eFOB09   ! C AN1..80 Description (352)
+
+endsegment
+
+segment LDT g3     ! C 1/12 Lead Time
+   eLDT01   ! M ID2..2 Lead Time Code (345)
+   eLDT02   ! M R1..15 Quantity (380)
+   eLDT03   ! M ID2..2 Unit of Time Period or Interval (344)
+   eLDT04   ! C DT8..8 Date (373)
+
+endsegment
+
+segment QTY g3     ! C 1/999 Quantity
+   eQTY01   ! M ID2..2 Quantity Qualifier (673)
+   eQTY02   ! C R1..15 Quantity (380)
+   ! QTY03 C Composite Unit of Measure (C001)
+   eQTY03.C00101   ! M ID2..2 Unit or Basis for Measurement Code (355)
+   eQTY03.C00102   ! C R1..15 Exponent (1018)
+   eQTY03.C00103   ! C R1..10 Multiplier (649)
+   eQTY03.C00104   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eQTY03.C00105   ! C R1..15 Exponent (1018)
+   eQTY03.C00106   ! C R1..10 Multiplier (649)
+   eQTY03.C00107   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eQTY03.C00108   ! C R1..15 Exponent (1018)
+   eQTY03.C00109   ! C R1..10 Multiplier (649)
+   eQTY03.C00110   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eQTY03.C00111   ! C R1..15 Exponent (1018)
+   eQTY03.C00112   ! C R1..10 Multiplier (649)
+   eQTY03.C00113   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eQTY03.C00114   ! C R1..15 Exponent (1018)
+   eQTY03.C00115   ! C R1..10 Multiplier (649)
+   eQTY04   ! C AN1..30 Free-Form Message (61)
+
+endsegment
+
+segment ATH g3     ! C 1/20 Resource Authorization
+   eATH01   ! M ID2..2 Resource Authorization Code (672)
+   eATH02   ! C DT8..8 Date (373)
+   eATH03   ! C R1..15 Quantity (380)
+   eATH04   ! C R1..15 Quantity (380)
+   eATH05   ! C DT8..8 Date (373)
+
+endsegment
+
+segment TD1 g3     ! C 1/1 Carrier Details (Quantity and Weight)
+   eTD101   ! C AN3..5 Packaging Code (103)
+   eTD102   ! C N0,1..7 Lading Quantity (80)
+   eTD103   ! C ID1..1 Commodity Code Qualifier (23)
+   eTD104   ! C AN1..30 Commodity Code (22)
+   eTD105   ! C AN1..50 Lading Description (79)
+   eTD106   ! C ID1..2 Weight Qualifier (187)
+   eTD107   ! C R1..10 Weight (81)
+   eTD108   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eTD109   ! C R1..8 Volume (183)
+   eTD110   ! C ID2..2 Unit or Basis for Measurement Code (355)
+
+endsegment
+
+segment TD5 g3     ! C 1/12 Carrier Details (Routing Sequence/Transit Time)
+   eTD501   ! C ID1..2 Routing Sequence Code (133)
+   eTD502   ! C ID1..2 Identification Code Qualifier (66)
+   eTD503   ! C AN2..80 Identification Code (67)
+   eTD504   ! C ID1..2 Transportation Method/Type Code (91)
+   eTD505   ! C AN1..35 Routing (387)
+   eTD506   ! C ID2..2 Shipment/Order Status Code (368)
+   eTD507   ! C ID1..2 Location Qualifier (309)
+   eTD508   ! C AN1..30 Location Identifier (310)
+   eTD509   ! C ID2..2 Transit Direction Code (731)
+   eTD510   ! C ID2..2 Transit Time Direction Qualifier (732)
+   eTD511   ! C R1..4 Transit Time (733)
+   eTD512   ! C ID2..2 Service Level Code (284)
+   eTD513   ! C ID2..2 Service Level Code (284)
+   eTD514   ! C ID2..2 Service Level Code (284)
+   eTD515   ! C ID2..3 Country Code (26)
+
+endsegment
+
+segment TD3 g3     ! C 1/12 Carrier Details (Equipment)
+   eTD301   ! C ID2..2 Equipment Description Code (40)
+   eTD302   ! C AN1..4 Equipment Initial (206)
+   eTD303   ! C AN1..10 Equipment Number (207)
+   eTD304   ! C ID1..2 Weight Qualifier (187)
+   eTD305   ! C R1..10 Weight (81)
+   eTD306   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eTD307   ! C ID1..1 Ownership Code (102)
+   eTD308   ! C ID2..2 Seal Status Code (407)
+   eTD309   ! C AN2..15 Seal Number (225)
+   eTD310   ! C ID4..4 Equipment Type (24)
+
+endsegment
+
+segment TD4 g3     ! C 1/5 Carrier Details (Special Handling
+   eTD401   ! C ID2..3 Special Handling Code (152)
+   eTD402   ! C ID1..1 Hazardous Material Code Qualifier (208)
+   eTD403   ! C AN1..4 Hazardous Material Class Code (209)
+   eTD404   ! C AN1..80 Description (352)
+   eTD405   ! C ID1..1 Yes/No Condition or Response Code (1073)
+
+endsegment
+
+segment MAN g3     ! C 1/10 Marks and Numbers
+   eMAN01   ! M ID1..2 Marks and Numbers Qualifier (88)
+   eMAN02   ! M AN1..48 Marks and Numbers (87)
+   eMAN03   ! C AN1..48 Marks and Numbers (87)
+   eMAN04   ! C ID1..2 Marks and Numbers Qualifier (88)
+   eMAN05   ! C AN1..48 Marks and Numbers (87)
+   eMAN06   ! C AN1..48 Marks and Numbers (87)
+
+endsegment
+
+segment DD g3     ! C 1/10 Demand Detail
+   eDD01   ! C AN1..30 Industry Code (1271)
+   eDD02   ! C ID1..3 Code List Qualifier Code (1270)
+   eDD03   ! C ID2..3 Reference Identification Qualifier (128)
+   eDD04   ! C AN1..30 Reference Identification (127)
+   eDD05   ! C AN1..30 Industry Code (1271)
+   eDD06   ! C ID1..3 Code List Qualifier Code (1270)
+   eDD07   ! C R1..15 Quantity (380)
+   eDD08   ! C ID1..1 Yes/No Condition or Response Code (1073)
+   eDD09   ! C AN1..30 Industry Code (1271)
+   eDD10   ! C ID1..3 Code List Qualifier Code (1270)
+
+endsegment
+
+! Groupe g3,g4 : C 1/100 
+segment SLN g3,g4     ! M 1/1 Subline Item Detail
+   eSLN01   ! M AN1..20 Assigned Identification (350)
+   eSLN02   ! C AN1..20 Assigned Identification (350)
+   eSLN03   ! M ID1..1 Relationship Code (662)
+   eSLN04   ! C R1..15 Quantity (380)
+   ! SLN05 C Composite Unit of Measure (C001)
+   eSLN05.C00101   ! M ID2..2 Unit or Basis for Measurement Code (355)
+   eSLN05.C00102   ! C R1..15 Exponent (1018)
+   eSLN05.C00103   ! C R1..10 Multiplier (649)
+   eSLN05.C00104   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eSLN05.C00105   ! C R1..15 Exponent (1018)
+   eSLN05.C00106   ! C R1..10 Multiplier (649)
+   eSLN05.C00107   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eSLN05.C00108   ! C R1..15 Exponent (1018)
+   eSLN05.C00109   ! C R1..10 Multiplier (649)
+   eSLN05.C00110   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eSLN05.C00111   ! C R1..15 Exponent (1018)
+   eSLN05.C00112   ! C R1..10 Multiplier (649)
+   eSLN05.C00113   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eSLN05.C00114   ! C R1..15 Exponent (1018)
+   eSLN05.C00115   ! C R1..10 Multiplier (649)
+   eSLN06   ! C R1..17 Unit Price (212)
+   eSLN07   ! C ID2..2 Basis of Unit Price Code (639)
+   eSLN08   ! C ID1..1 Relationship Code (662)
+   eSLN09   ! C ID2..2 Product/Service ID Qualifier (235)
+   eSLN10   ! C AN1..48 Product/Service ID (234)
+   eSLN11   ! C ID2..2 Product/Service ID Qualifier (235)
+   eSLN12   ! C AN1..48 Product/Service ID (234)
+   eSLN13   ! C ID2..2 Product/Service ID Qualifier (235)
+   eSLN14   ! C AN1..48 Product/Service ID (234)
+   eSLN15   ! C ID2..2 Product/Service ID Qualifier (235)
+   eSLN16   ! C AN1..48 Product/Service ID (234)
+   eSLN17   ! C ID2..2 Product/Service ID Qualifier (235)
+   eSLN18   ! C AN1..48 Product/Service ID (234)
+   eSLN19   ! C ID2..2 Product/Service ID Qualifier (235)
+   eSLN20   ! C AN1..48 Product/Service ID (234)
+   eSLN21   ! C ID2..2 Product/Service ID Qualifier (235)
+   eSLN22   ! C AN1..48 Product/Service ID (234)
+   eSLN23   ! C ID2..2 Product/Service ID Qualifier (235)
+   eSLN24   ! C AN1..48 Product/Service ID (234)
+   eSLN25   ! C ID2..2 Product/Service ID Qualifier (235)
+   eSLN26   ! C AN1..48 Product/Service ID (234)
+   eSLN27   ! C ID2..2 Product/Service ID Qualifier (235)
+   eSLN28   ! C AN1..48 Product/Service ID (234)
+
+endsegment
+
+segment PID g3,g4     ! C 1/1000 Product/Item Description
+   ePID01   ! M ID1..1 Item Description Type (349)
+   ePID02   ! C ID2..3 Product/Process Characteristic Code (750)
+   ePID03   ! C ID2..2 Agency Qualifier Code (559)
+   ePID04   ! C AN1..12 Product Description Code (751)
+   ePID05   ! C AN1..80 Description (352)
+   ePID06   ! C ID2..2 Surface/Layer/Position Code (752)
+   ePID07   ! C AN1..15 Source Subqualifier (822)
+   ePID08   ! C ID1..1 Yes/No Condition or Response Code (1073)
+   ePID09   ! C ID2..3 Language Code (819)
+
+endsegment
+
+segment NM1 g3,g4     ! C 1/10 Individual or Organizational Name
+   eNM101   ! M ID2..3 Entity Identifier Code (98)
+   eNM102   ! M ID1..1 Entity Type Qualifier (1065)
+   eNM103   ! C AN1..35 Name Last or Organization Name (1035)
+   eNM104   ! C AN1..25 Name First (1036)
+   eNM105   ! C AN1..25 Name Middle (1037)
+   eNM106   ! C AN1..10 Name Prefix (1038)
+   eNM107   ! C AN1..10 Name Suffix (1039)
+   eNM108   ! C ID1..2 Identification Code Qualifier (66)
+   eNM109   ! C AN2..80 Identification Code (67)
+   eNM110   ! C ID2..2 Entity Relationship Code (706)
+   eNM111   ! C ID2..3 Entity Identifier Code (98)
+
+endsegment
+
+! Groupe g3,g5 : C 1/200 
+segment N1 g3,g5     ! M 1/1 Name
+   eN101   ! M ID2..3 Entity Identifier Code (98)
+   eN102   ! C AN1..60 Name (93)
+   eN103   ! C ID1..2 Identification Code Qualifier (66)
+   eN104   ! C AN2..80 Identification Code (67)
+   eN105   ! C ID2..2 Entity Relationship Code (706)
+   eN106   ! C ID2..3 Entity Identifier Code (98)
+
+endsegment
+
+segment N2 g3,g5     ! C 1/2 Additional Name Information
+   eN201   ! M AN1..60 Name (93)
+   eN202   ! C AN1..60 Name (93)
+
+endsegment
+
+segment N3 g3,g5     ! C 1/2 Address Information
+   eN301   ! M AN1..55 Address Information (166)
+   eN302   ! C AN1..55 Address Information (166)
+
+endsegment
+
+segment N4 g3,g5     ! C 1/1 Geographic Location
+   eN401   ! C AN2..30 City Name (19)
+   eN402   ! C ID2..2 State or Province Code (156)
+   eN403   ! C ID3..15 Postal Code (116)
+   eN404   ! C ID2..3 Country Code (26)
+   eN405   ! C ID1..2 Location Qualifier (309)
+   eN406   ! C AN1..30 Location Identifier (310)
+
+endsegment
+
+segment REF g3,g5     ! C 1/12 Reference Identification
+   eREF01   ! M ID2..3 Reference Identification Qualifier (128)
+   eREF02   ! C AN1..30 Reference Identification (127)
+   eREF03   ! C AN1..80 Description (352)
+   ! REF04 C Reference Identifier (C040)
+   eREF04.C04001   ! M ID2..3 Reference Identification Qualifier (128)
+   eREF04.C04002   ! M AN1..30 Reference Identification (127)
+   eREF04.C04003   ! C ID2..3 Reference Identification Qualifier (128)
+   eREF04.C04004   ! C AN1..30 Reference Identification (127)
+   eREF04.C04005   ! C ID2..3 Reference Identification Qualifier (128)
+   eREF04.C04006   ! C AN1..30 Reference Identification (127)
+
+endsegment
+
+segment PER g3,g5     ! C 1/3 Administrative Communications Contact
+   ePER01   ! M ID2..2 Contact Function Code (366)
+   ePER02   ! C AN1..60 Name (93)
+   ePER03   ! C ID2..2 Communication Number Qualifier (365)
+   ePER04   ! C AN1..80 Communication Number (364)
+   ePER05   ! C ID2..2 Communication Number Qualifier (365)
+   ePER06   ! C AN1..80 Communication Number (364)
+   ePER07   ! C ID2..2 Communication Number Qualifier (365)
+   ePER08   ! C AN1..80 Communication Number (364)
+   ePER09   ! C AN1..20 Contact Inquiry Reference (443)
+
+endsegment
+
+segment FOB g3,g5     ! C 1/1 F.O.B. Related Instructions
+   eFOB01   ! M ID2..2 Shipment Method of Payment (146)
+   eFOB02   ! C ID1..2 Location Qualifier (309)
+   eFOB03   ! C AN1..80 Description (352)
+   eFOB04   ! C ID2..2 Transportation Terms Qualifier Code (334)
+   eFOB05   ! C ID3..3 Transportation Terms Code (335)
+   eFOB06   ! C ID1..2 Location Qualifier (309)
+   eFOB07   ! C AN1..80 Description (352)
+   eFOB08   ! C ID2..2 Risk of Loss Code (54)
+   eFOB09   ! C AN1..80 Description (352)
+
+endsegment
+
+! Groupe g3,g6 : C 1/999 
+segment LM g3,g6     ! M 1/1 Code Source Information
+   eLM01   ! M ID2..2 Agency Qualifier Code (559)
+   eLM02   ! C AN1..15 Source Subqualifier (822)
+
+endsegment
+
+segment LQ g3,g6     ! M 1/100 Industry Code
+   eLQ01   ! C ID1..3 Code List Qualifier Code (1270)
+   eLQ02   ! C AN1..30 Industry Code (1271)
+
+endsegment
+*/
+! Groupe g3,g7 : C 1/999 
+segment FST g3,g7     ! M 1/1 Forecast Schedule
+nFST++
+	if bBuilt_LIN then
+		bfBuild_LIN()
+		bBuilt_LIN := FALSE
+	endif
+   tSCH_Discrete_Quantity := eFST01   ! M R1..15 Quantity (380)
+   switch eFST02   ! M ID1..1 Forecast Qualifier (680)
+	case "C" :
+		tSCH_Delivery_Plan := "1"
+	case "D" :
+		tSCH_Delivery_Plan := "4"
+   endswitch
+!   eFST03   ! M ID1..1 Forecast Timing Qualifier (681)
+!   tSCH_Delivery_DTM_Requested := eFST04   ! M DT8..8 Date (373)
+	tSCH_Shipment_DTM_Requested := eFST04 ! Modif 12/03/2013
+	if bNB then
+		if tHDR_Sender_Id = "079643491" or tHDR_Sender_Id = "603911475" then ! uniquement pour ces 2 sites JD
+			tfDelivery_Plan() ! >> Calcul des previsions prends le dessus sur eFST02
+			if nFST = 1 then
+				log("Code usine JD : ",tHDR_Sender_Id,NL)		
+				log("Delivery plan forcé",NL)
+			endif
+		else
+			if nFST = 1 then
+				log("Code usine JD : ",tHDR_Sender_Id,NL)
+				log("Pas de calcul pour Delivery plan",NL)
+			endif
+		endif
+	endif
+!   eFST05   ! C DT8..8 Date (373)
+!   eFST06   ! C ID3..3 Date/Time Qualifier (374)
+!   eFST07   ! C TM4..8 Time (337)
+!   eFST08   ! C ID2..3 Reference Identification Qualifier (128)
+!   eFST09   ! C AN1..30 Reference Identification (127)
+!   eFST10   ! C ID2..2 Planning Schedule Type Code (783)
+
+	nSCH++
+	tSCH_Counter := build(nSCH:R0)
+	bfBuild_SCH()
+endsegment
+/*
+segment QTY g3,g7     ! C 1/999 Quantity
+   eQTY01   ! M ID2..2 Quantity Qualifier (673)
+   eQTY02   ! C R1..15 Quantity (380)
+   ! QTY03 C Composite Unit of Measure (C001)
+   eQTY03.C00101   ! M ID2..2 Unit or Basis for Measurement Code (355)
+   eQTY03.C00102   ! C R1..15 Exponent (1018)
+   eQTY03.C00103   ! C R1..10 Multiplier (649)
+   eQTY03.C00104   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eQTY03.C00105   ! C R1..15 Exponent (1018)
+   eQTY03.C00106   ! C R1..10 Multiplier (649)
+   eQTY03.C00107   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eQTY03.C00108   ! C R1..15 Exponent (1018)
+   eQTY03.C00109   ! C R1..10 Multiplier (649)
+   eQTY03.C00110   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eQTY03.C00111   ! C R1..15 Exponent (1018)
+   eQTY03.C00112   ! C R1..10 Multiplier (649)
+   eQTY03.C00113   ! C ID2..2 Unit or Basis for Measurement Code (355)
+   eQTY03.C00114   ! C R1..15 Exponent (1018)
+   eQTY03.C00115   ! C R1..10 Multiplier (649)
+   eQTY04   ! C AN1..30 Free-Form Message (61)
+
+endsegment
+
+segment SDQ g3,g7     ! C 1/50 Destination Quantity
+   eSDQ01   ! M ID2..2 Unit or Basis for Measurement Code (355)
+   eSDQ02   ! C ID1..2 Identification Code Qualifier (66)
+   eSDQ03   ! M AN2..80 Identification Code (67)
+   eSDQ04   ! M R1..15 Quantity (380)
+   eSDQ05   ! C AN2..80 Identification Code (67)
+   eSDQ06   ! C R1..15 Quantity (380)
+   eSDQ07   ! C AN2..80 Identification Code (67)
+   eSDQ08   ! C R1..15 Quantity (380)
+   eSDQ09   ! C AN2..80 Identification Code (67)
+   eSDQ10   ! C R1..15 Quantity (380)
+   eSDQ11   ! C AN2..80 Identification Code (67)
+   eSDQ12   ! C R1..15 Quantity (380)
+   eSDQ13   ! C AN2..80 Identification Code (67)
+   eSDQ14   ! C R1..15 Quantity (380)
+   eSDQ15   ! C AN2..80 Identification Code (67)
+   eSDQ16   ! C R1..15 Quantity (380)
+   eSDQ17   ! C AN2..80 Identification Code (67)
+   eSDQ18   ! C R1..15 Quantity (380)
+   eSDQ19   ! C AN2..80 Identification Code (67)
+   eSDQ20   ! C R1..15 Quantity (380)
+   eSDQ21   ! C AN2..80 Identification Code (67)
+   eSDQ22   ! C R1..15 Quantity (380)
+   eSDQ23   ! C AN1..30 Location Identifier (310)
+
+endsegment
+
+! Groupe g3,g7,g8 : C 1/999 
+segment LM g3,g7,g8     ! M 1/1 Code Source Information
+   eLM01   ! M ID2..2 Agency Qualifier Code (559)
+   eLM02   ! C AN1..15 Source Subqualifier (822)
+
+endsegment
+
+segment LQ g3,g7,g8     ! M 1/100 Industry Code
+   eLQ01   ! C ID1..3 Code List Qualifier Code (1270)
+   eLQ02   ! C AN1..30 Industry Code (1271)
+
+endsegment
+
+! Groupe g3,g9 : C 1/260 
+segment SDP g3,g9     ! M 1/1 Ship/Delivery Pattern
+   eSDP01   ! M ID1..2 Ship/Delivery or Calendar Pattern Code (678)
+   eSDP02   ! M ID1..1 Ship/Delivery Pattern Time Code (679)
+   eSDP03   ! C ID1..2 Ship/Delivery or Calendar Pattern Code (678)
+   eSDP04   ! C ID1..1 Ship/Delivery Pattern Time Code (679)
+   eSDP05   ! C ID1..2 Ship/Delivery or Calendar Pattern Code (678)
+   eSDP06   ! C ID1..1 Ship/Delivery Pattern Time Code (679)
+   eSDP07   ! C ID1..2 Ship/Delivery or Calendar Pattern Code (678)
+   eSDP08   ! C ID1..1 Ship/Delivery Pattern Time Code (679)
+
+endsegment
+
+segment FST g3,g9     ! C 1/260 Forecast Schedule
+   eFST01   ! M R1..15 Quantity (380)
+   eFST02   ! M ID1..1 Forecast Qualifier (680)
+   eFST03   ! M ID1..1 Forecast Timing Qualifier (681)
+   eFST04   ! M DT8..8 Date (373)
+   eFST05   ! C DT8..8 Date (373)
+   eFST06   ! C ID3..3 Date/Time Qualifier (374)
+   eFST07   ! C TM4..8 Time (337)
+   eFST08   ! C ID2..3 Reference Identification Qualifier (128)
+   eFST09   ! C AN1..30 Reference Identification (127)
+   eFST10   ! C ID2..2 Planning Schedule Type Code (783)
+
+endsegment
+*/
+! Groupe g3,g10 : C 1/25 
+
+segment SHP g3,g10     ! M 1/1 Shipped/Received Information
+   switch eSHP01   ! C ID2..2 Quantity Qualifier (673)
+	case "01" :
+		tSCH_Discrete_Quantity := eSHP02 ! C R1..15 Quantity (380)
+	case "02" :
+		tLIN_Cumulative_Quantity := eSHP02
+	endswitch
+
+   switch eSHP03  ! C ID3..3 Date/Time Qualifier (374)
+		case "050" :
+			tLIN_Goods_Receipt_Datetime := eSHP04
+		case "051" :
+			tLIN_Cumul_Quantity_Start_Date := eSHP04   ! C DT8..8 Date (373)
+	endswitch
+   
+!   eSHP05   ! C TM4..8 Time (337)
+!   eSHP06   ! C DT8..8 Date (373)
+!   eSHP07   ! C TM4..8 Time (337)
+
+endsegment
+/*
+segment REF g3,g10     ! C 1/5 Reference Identification
+   eREF01   ! M ID2..3 Reference Identification Qualifier (128)
+   eREF02   ! C AN1..30 Reference Identification (127)
+   eREF03   ! C AN1..80 Description (352)
+   ! REF04 C Reference Identifier (C040)
+   eREF04.C04001   ! M ID2..3 Reference Identification Qualifier (128)
+   eREF04.C04002   ! M AN1..30 Reference Identification (127)
+   eREF04.C04003   ! C ID2..3 Reference Identification Qualifier (128)
+   eREF04.C04004   ! C AN1..30 Reference Identification (127)
+   eREF04.C04005   ! C ID2..3 Reference Identification Qualifier (128)
+   eREF04.C04006   ! C AN1..30 Reference Identification (127)
+
+endsegment
+*/
+segment CTT     ! C 1/1 Transaction Totals
+!   eCTT01   ! M N0,1..6 Number of Line Items (354)
+!   eCTT02   ! C R1..10 Hash Total (347)
+!   eCTT03   ! C R1..10 Weight (81)
+!   eCTT04   ! C ID2..2 Unit or Basis for Measurement Code (355)
+!   eCTT05   ! C R1..8 Volume (183)
+!   eCTT06   ! C ID2..2 Unit or Basis for Measurement Code (355)
+!   eCTT07   ! C AN1..80 Description (352)
+endsegment
+
+segment SE     ! M 1/1 Transaction Set Trailer
+!   eSE01   ! M N0,1..10 Number of Included Segments (96)
+!   eSE02   ! M AN4..9 Transaction Set Control Number (329)
+endsegment
+
+! Section des traitements par défaut
+default
+!tLine := pick(1,1,EOL)
+!log("MVI|",tLine,NL)
+enddefault
+
+!===========================================================
+
+! Section de fin des traitements
+
+end
+
+	flush(0,0,NL) 
+	
+	if nErreur > 0 then
+		log("* --- ",nErreur," Erreur(s) --- *",NL)
+		exit(1)
+	endif
+	
+	tFilenameOUT := build("DEL",tCodeClient,"_",tDate,cComptDEL,".txt")
+	tFileOut := build(sHOME,"/outbox/",tFilenameOUT)
+	
+	log("Output file : ", tFileOut,NL)
+
+    tNow := time("now","%d.%m.%Y %H:%M:%S")
+	log("* ---  ends : ",tNow,NL)
+endend
+
+!===========================================================
+function nfPos(tIn)
+
+	nRet := nPos + length(tIn) + 1
+	
+	return (nRet)
+
+endfunction		
+
+function bfInitialise()
+	! Initialisation des Variables
+
+	nRec := 0
+	nLIN := 0
+	bBuilt_LIN := TRUE
+	nFST := 0
+	
+endfunction
+
+function tfDelivery_Plan()
+/*			
+Si la 1ère ligne demandée <= à J+ nDate_J  ? Commande ferme 	> tSCH_Delivery_Plan := "1"
+Si la 1ère ligne demandée > à J + nDate_J  ? Prévision 		> tSCH_Delivery_Plan := "4"
+Ajout de nDate_J Jours à la date du jour */
+!20141029 + 10 = 20141108
+
+	nShipDate := number(tSCH_Shipment_DTM_Requested)
+	if nShipDate <= nDate_J then
+		tSCH_Delivery_Plan := "1"
+	else
+		tSCH_Delivery_Plan := "4"
+	endif
+	
+endfunction
+
+function bfInitialise_HDR()
+
+	tHDR_ID := "HDR"
+	tHDR_Doc_Number := ""
+	tHDR_Sender_Id := ""
+	tHDR_Recipient_Id := ""
+	tHDR_Doc_Code := ""
+	tHDR_Doc_Name := ""
+	tHDR_Message_Function_Coded := ""
+	tHDR_Doc_datetime := ""
+	tHDR_Horizon_Start_Date := ""
+	tHDR_Horizon_End_Date := ""
+	tHDR_Party_To_RSNC := ""
+	tHDR_Party_To_RSNN := ""
+	tHDR_Supplier_Code := ""
+	tHDR_Supplier_Name := ""
+	tHDR_Buyer_Code := ""
+	tHDR_Buyer_Name := ""
+
+endfunction
+
+function bfInitialise_SHT()
+
+	tSHT_ID := "SHT"
+	tSHT_Doc_Number := ""
+	tSHT_Counter := ""
+	tSHT_Ship_to_Code := ""
+	tSHT_Ship_to_Name := ""
+	tSHT_Ship_to_Street := ""
+	tSHT_Ship_to_City := ""
+	tSHT_Ship_to_Postal_Code := ""
+	tSHT_Ship_to_Country := ""
+	tSHT_Department_or_Employee_Id := ""
+	tSHT_Department_or_Employee := ""
+	tSHT_Phone_Number := ""
+	tSHT_Fax_Number := ""
+	tSHT_Email_Address := ""
+
+endfunction
+
+function bfInitialise_LIN()
+
+	tLIN_ID := "LIN"
+	tLIN_Doc_Number := ""
+	tLIN_Ship_to_Counter := ""
+	tLIN_Line_Item_Number := ""
+	tLIN_Action_Notification := ""
+	tLIN_Item_Customer_Number := ""
+	tLIN_Drawing_revision_Number := ""
+	tLIN_Engineering_change_level := ""
+	tLIN_Item_Purchase_order_Number := ""
+	tLIN_Item_Release_Number := ""
+	tLIN_Item_Vendor_part_Number := ""
+	tLIN_Item_Description := ""
+	tLIN_Weight_Value := ""
+	tLIN_Weight_Unit_Qualifier := ""
+	tLIN_Add_Internal_Destination := ""
+	tLIN_Calculation_DTM_Period := ""
+	tLIN_Buyer_Order_Number := ""
+	tLIN_Previous_Delivery_Number := ""
+	tLIN_Cumulative_Quantity := ""
+	tLIN_Cumulative_MU := ""
+	tLIN_Received_Quantity := ""
+	tLIN_Received_MU := ""
+	tLIN_Backorder_Quantity := ""
+	tLIN_Backorder_MU := ""
+	tLIN_Despatch_Quantity := ""
+	tLIN_Despatch_MU := ""
+	tLIN_Goods_Receipt_Datetime := ""
+	tLIN_Cumul_Quantity_Start_Date := ""
+	tLIN_Cumul_Quantity_End_Date := ""
+	tLIN_Despatch_Datetime := ""
+	tLIN_Despatch_Advice_Number := ""
+	tLIN_Free_Text := ""
+
+endfunction
+
+function bfInitialise_SCH()
+
+	tSCH_ID := "SCH"
+	tSCH_Doc_Number := ""
+	tSCH_Ship_to_Counter := ""
+	tSCH_Line_Item_Number := ""
+	tSCH_Counter := ""
+	tSCH_Delivery_Plan := ""
+	tSCH_Despatch_Pattern_Coded := ""
+	tSCH_Despatch_Pattern_TC := ""
+	tSCH_Discrete_Quantity := ""
+	tSCH_Discrete_MU := ""
+	tSCH_Quantity_to_be_Delivered := ""
+	tSCH_Quantity_MU := ""
+	tSCH_Delivery_DTM_Requested := ""
+	tSCH_Shipment_DTM_Requested := ""
+	tSCH_Horizon_Start_Date := ""
+	tSCH_Horizon_End_Date := ""
+	tSCH_Delivery_Datetime_Latest := ""
+	tSCH_Delivery_Datetime_Earliest := ""
+	tSCH_Start_Datetime := ""
+	tSCH_End_Datetime := ""
+	tSCH_Load_Planning_Number := ""
+!	tSCH_Customer_Order_Number := ""
+
+endfunction
+
+function bfBuild_HDR()
+	
+	nRec++
+	nPos := 1
+	R_HDR_Header_Identifier(tHDR_ID)
+	nPos := nfPos(tHDR_ID)
+	R_HDR_Document_Number(tHDR_Doc_Number)
+	nPos := nfPos(tHDR_Doc_Number)
+	R_HDR_Sender_Identification(tHDR_Sender_Id)
+	nPos := nfPos(tHDR_Sender_Id)
+	R_HDR_Recipient_Identification(tHDR_Recipient_Id)
+	nPos := nfPos(tHDR_Recipient_Id)
+	R_HDR_Document_Code(tHDR_Doc_Code)
+	nPos := nfPos(tHDR_Doc_Code)
+	R_HDR_Document_Name(tHDR_Doc_Name)
+	nPos := nfPos(tHDR_Doc_Name)
+	R_HDR_Message_Function_Coded(tHDR_Message_Function_Coded)
+	nPos := nfPos(tHDR_Message_Function_Coded)
+	R_HDR_Document_datetime(tHDR_Doc_datetime)
+	nPos := nfPos(tHDR_Doc_datetime)
+	R_HDR_Horizon_Start_Date(tHDR_Horizon_Start_Date)
+	nPos := nfPos(tHDR_Horizon_Start_Date)
+	R_HDR_Horizon_End_Date(tHDR_Horizon_End_Date)
+	nPos := nfPos(tHDR_Horizon_End_Date)
+	R_HDR_Party_To_Receive_Shipping_Notice_Code(tHDR_Party_To_RSNC)
+	nPos := nfPos(tHDR_Party_To_RSNC)
+	R_HDR_Party_To_Receive_Shipping_Notice_Name(tHDR_Party_To_RSNN)
+	nPos := nfPos(tHDR_Party_To_RSNN)
+	R_HDR_Supplier_Code(tHDR_Supplier_Code)
+	nPos := nfPos(tHDR_Supplier_Code)
+	R_HDR_Supplier_Name(tHDR_Supplier_Name)
+	nPos := nfPos(tHDR_Supplier_Name)
+	R_HDR_Buyer_Code(tHDR_Buyer_Code)
+	nPos := nfPos(tHDR_Buyer_Code)
+	R_HDR_Buyer_Name(tHDR_Buyer_Name)
+	nPos := nfPos(tHDR_Buyer_Name)
+	
+
+endfunction
+
+function bfBuild_SHT()
+
+	nRec++
+	nPos := 1
+	R_SHT_Ship_To_Identifier(tSHT_ID)
+	nPos := nfPos(tSHT_ID)
+	R_SHT_Document_Number(tHDR_Doc_Number)
+	nPos := nfPos(tHDR_Doc_Number)
+	R_SHT_Counter(tSHT_Counter)
+	nPos := nfPos(tSHT_Counter)
+	R_SHT_Ship_to_Code(tSHT_Ship_to_Code)
+	nPos := nfPos(tSHT_Ship_to_Code)
+	R_SHT_Ship_to_Name(tSHT_Ship_to_Name)
+	nPos := nfPos(tSHT_Ship_to_Name)
+	R_SHT_Ship_to_Street(tSHT_Ship_to_Street)
+	nPos := nfPos(tSHT_Ship_to_Street)
+	R_SHT_Ship_to_City(tSHT_Ship_to_City)
+	nPos := nfPos(tSHT_Ship_to_City)
+	R_SHT_Ship_to_Postal_Code(tSHT_Ship_to_Postal_Code)
+	nPos := nfPos(tSHT_Ship_to_Postal_Code)
+	R_SHT_Ship_to_Country(tSHT_Ship_to_Country)
+	nPos := nfPos(tSHT_Ship_to_Country)
+	R_SHT_Department_or_Employee_Identification(tSHT_Department_or_Employee_Id)
+	nPos := nfPos(tSHT_Department_or_Employee_Id)
+	R_SHT_Department_or_Employee(tSHT_Department_or_Employee)
+	nPos := nfPos(tSHT_Department_or_Employee)
+	R_SHT_Phone_Number(tSHT_Phone_Number)
+	nPos := nfPos(tSHT_Phone_Number)
+	R_SHT_Fax_Number(tSHT_Fax_Number)
+	nPos := nfPos(tSHT_Fax_Number)
+	R_SHT_Email_Address(tSHT_Email_Address)
+	nPos := nfPos(tSHT_Email_Address)
+
+endfunction
+
+function bfBuild_LIN()
+
+	nRec++
+	nPos := 1
+	R_LIN_Line_Identifier(tLIN_ID)
+	nPos := nfPos(tLIN_ID)
+	R_LIN_Document_Number(tHDR_Doc_Number)
+	nPos := nfPos(tHDR_Doc_Number)
+	R_LIN_Ship_to_Counter(tSHT_Counter)
+	nPos := nfPos(tSHT_Counter)
+	R_LIN_Line_Item_Number(tLIN_Line_Item_Number)
+	nPos := nfPos(tLIN_Line_Item_Number)
+	R_LIN_Action_Notification(tLIN_Action_Notification)
+	nPos := nfPos(tLIN_Action_Notification)
+	R_LIN_Item_Customer_Number(tLIN_Item_Customer_Number)
+	nPos := nfPos(tLIN_Item_Customer_Number)
+	R_LIN_Item_Drawing_revision_Number(tLIN_Drawing_revision_Number)
+	nPos := nfPos(tLIN_Drawing_revision_Number)
+	R_LIN_Item_Engineering_change_level(tLIN_Engineering_change_level)
+	nPos := nfPos(tLIN_Engineering_change_level)
+	R_LIN_Item_Purchase_order_Number(tLIN_Item_Purchase_order_Number)
+	nPos := nfPos(tLIN_Item_Purchase_order_Number)
+	R_LIN_Item_Release_Number(tLIN_Item_Release_Number)
+	nPos := nfPos(tLIN_Item_Release_Number)
+	R_LIN_Item_Vendor_part_Number(tLIN_Item_Vendor_part_Number)
+	nPos := nfPos(tLIN_Item_Vendor_part_Number)
+	R_LIN_Item_Description(tLIN_Item_Description)
+	nPos := nfPos(tLIN_Item_Description)
+	R_LIN_Weight_Value(tLIN_Weight_Value)
+	nPos := nfPos(tLIN_Weight_Value)
+	R_LIN_Weight_Unit_Qualifier(tLIN_Weight_Unit_Qualifier)
+	nPos := nfPos(tLIN_Weight_Unit_Qualifier)
+	R_LIN_Additional_Internal_Destination(tLIN_Add_Internal_Destination)
+	nPos := nfPos(tLIN_Add_Internal_Destination)
+	R_LIN_Calculation_Datetime_Period(tLIN_Calculation_DTM_Period)
+	nPos := nfPos(tLIN_Calculation_DTM_Period)
+	R_LIN_Buyer_Order_Number(tLIN_Buyer_Order_Number)
+	nPos := nfPos(tLIN_Buyer_Order_Number)
+	R_LIN_Previous_Delivery_Instruction_Number(tLIN_Previous_Delivery_Number)
+	nPos := nfPos(tLIN_Previous_Delivery_Number)
+	R_LIN_Cumulative_Quantity(tLIN_Cumulative_Quantity)
+	nPos := nfPos(tLIN_Cumulative_Quantity)
+	R_LIN_Cumulative_Measure_Unit_qualifier(tLIN_Cumulative_MU)
+	nPos := nfPos(tLIN_Cumulative_MU)
+	R_LIN_Received_Quantity(tLIN_Received_Quantity)
+	nPos := nfPos(tLIN_Received_Quantity)
+	R_LIN_Received_Measure_Unit_qualifier(tLIN_Received_MU)
+	nPos := nfPos(tLIN_Received_MU)
+	R_LIN_Backorder_Quantity(tLIN_Backorder_Quantity)
+	nPos := nfPos(tLIN_Backorder_Quantity)
+	R_LIN_Backorder_Measure_Unit_qualifier(tLIN_Backorder_MU)
+	nPos := nfPos(tLIN_Backorder_MU)
+	R_LIN_Despatch_Quantity(tLIN_Despatch_Quantity)
+	nPos := nfPos(tLIN_Despatch_Quantity)
+	R_LIN_Despatch_Measure_Unit_qualifier(tLIN_Despatch_MU)
+	nPos := nfPos(tLIN_Despatch_MU)
+	R_LIN_Goods_Receipt_Datetime(tLIN_Goods_Receipt_Datetime)
+	nPos := nfPos(tLIN_Goods_Receipt_Datetime)
+	R_LIN_Cumulative_Quantity_Start_Date(tLIN_Cumul_Quantity_Start_Date)
+	nPos := nfPos(tLIN_Cumul_Quantity_Start_Date)
+	R_LIN_Cumulative_Quantity_End_Date(tLIN_Cumul_Quantity_End_Date)
+	nPos := nfPos(tLIN_Cumul_Quantity_End_Date)
+	R_LIN_Despatch_Datetime(tLIN_Despatch_Datetime)
+	nPos := nfPos(tLIN_Despatch_Datetime)
+	R_LIN_Despatch_Advice_Number(tLIN_Despatch_Advice_Number)
+	nPos := nfPos(tLIN_Despatch_Advice_Number)
+	R_LIN_Free_Text(tLIN_Free_Text)
+	nPos := nfPos(tLIN_Free_Text)
+
+endfunction
+
+function bfBuild_SCH()
+
+	nRec++
+	nPos := 1
+	R_SCH_Schedule_Identifier(tSCH_ID)
+	nPos := nfPos(tSCH_ID)
+	R_SCH_Document_Number(tHDR_Doc_Number)
+	nPos := nfPos(tHDR_Doc_Number)
+	R_SCH_Ship_to_Counter(tSHT_Counter)
+	nPos := nfPos(tSHT_Counter)
+	R_SCH_Line_Item_Number(tLIN_Line_Item_Number)
+	nPos := nfPos(tLIN_Line_Item_Number)
+	R_SCH_Counter(tSCH_Counter)
+	nPos := nfPos(tSCH_Counter)
+	R_SCH_Delivery_Plan(tSCH_Delivery_Plan)
+	nPos := nfPos(tSCH_Delivery_Plan)
+	R_SCH_Despatch_Pattern_Coded(tSCH_Despatch_Pattern_Coded)
+	nPos := nfPos(tSCH_Despatch_Pattern_Coded)
+	R_SCH_Despatch_Pattern_Timing_Coded(tSCH_Despatch_Pattern_TC)
+	nPos := nfPos(tSCH_Despatch_Pattern_TC)
+	R_SCH_Discrete_Quantity(tSCH_Discrete_Quantity)
+	nPos := nfPos(tSCH_Discrete_Quantity)
+	R_SCH_Discrete_Measure_Unit_qualifier(tSCH_Discrete_MU)
+	nPos := nfPos(tSCH_Discrete_MU)
+	R_SCH_Quantity_to_be_Delivered(tSCH_Quantity_to_be_Delivered)
+	nPos := nfPos(tSCH_Quantity_to_be_Delivered)
+	R_SCH_Quantity_Measure_Unit_qualifier(tSCH_Quantity_MU)
+	nPos := nfPos(tSCH_Quantity_MU)
+	R_SCH_Delivery_Datetime_Requested(tSCH_Delivery_DTM_Requested)
+	nPos := nfPos(tSCH_Delivery_DTM_Requested)
+	R_SCH_Shipment_Datetime_Requested(tSCH_Shipment_DTM_Requested)
+	nPos := nfPos(tSCH_Shipment_DTM_Requested)
+	R_SCH_Horizon_Start_Date(tSCH_Horizon_Start_Date)
+	nPos := nfPos(tSCH_Horizon_Start_Date)
+	R_SCH_Horizon_End_Date(tSCH_Horizon_End_Date)
+	nPos := nfPos(tSCH_Horizon_End_Date)
+	R_SCH_Delivery_Datetime_Latest(tSCH_Delivery_Datetime_Latest)
+	nPos := nfPos(tSCH_Delivery_Datetime_Latest)
+	R_SCH_Delivery_Datetime_Earliest(tSCH_Delivery_Datetime_Earliest)
+	nPos := nfPos(tSCH_Delivery_Datetime_Earliest)
+	R_SCH_Start_Datetime(tSCH_Start_Datetime)
+	nPos := nfPos(tSCH_Start_Datetime)
+	R_SCH_End_Datetime(tSCH_End_Datetime)
+	nPos := nfPos(tSCH_End_Datetime)
+	R_SCH_Load_Planning_Number(tSCH_Load_Planning_Number)
+	nPos := nfPos(tSCH_Load_Planning_Number)
+!	R_SCH_Customer_Order_Number(tSCH_Customer_Order_Number)
+!	nPos := nfPos(tSCH_Customer_Order_Number)
+
+endfunction

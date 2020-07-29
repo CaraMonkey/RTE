@@ -1,0 +1,124 @@
+! @(#)  LOR_READ_TXTFILE.rte 
+!==============================================================================
+! 09/10/2018  RMA  1.0 Creation
+!==============================================================================
+#define PROG_NAME "LOR_READ_TXTFILE.rte"
+#define PROG_DATE "09/10/2018"
+#define PROG_VER  "1.0"
+#define PROG_INFO build(PROG_NAME," v",PROG_VER," du ",PROG_DATE)
+
+! Format du fichier d'entree
+#define FILE_ORDER_SITEID 			1
+#define FILE_ORDER_SAPID			2
+#define FILE_ORDER_DOCID			3
+#define	FILE_ORDER_DTESTATUT		4
+#define FILE_ORDER_REFCLI			5
+#define FILE_ORDER_ORIG				6
+#define FILE_ORDER_CLIENT			7
+#define	FILE_ORDER_DTECMD			8
+#define FILE_ORDER_DTELIV			9
+#define FILE_ORDER_STATUT			10
+#define FILE_ORDER_AMOUNT			11
+#define FILE_ORDER_TYPEDOC			12
+#define FILE_ORDER_NOMFILEPDF		13
+
+#define FILE_MAX_CHAMPS				13
+
+!
+! Fonction
+!
+#include "generix_fct_V1_3.inc"
+
+!
+! Section d'initialisation
+!
+begin
+print("test",NL)
+	bfBEGIN()
+    tFICHIERTXT := build(pINPUT_DIR,"/B2B_ENVELOPPE*")
+    nLineFile := 0
+    nFile     := 0
+endbegin
+
+
+!
+! Section d'initialisation
+!
+end
+  
+  while fFile in tFICHIERTXT do
+	    LOG("Lecture du fichier", fFile.FULLNAME)
+pNOM_FICHIER := fFile.NAME
+		tLine := read(fFile.FULLNAME)
+        taLine[nLineFile] := tLine
+		nLineFile++
+		while tLine <> EOF do
+		    LOG("Ligne", tLine)
+			tLine := read(fFile.FULLNAME)
+            taLine[nLineFile] := tLine
+            nLineFile++
+		endwhile
+		nFile++
+	endwhile
+
+  if(nLineFile > 2) then ! Une ligne + EOF = 2.
+     ERREUR(build("Erreur le fichier txt ", fFile.FULLNAME," a plus d'une ligne"), "Aborted")
+     bfEXIT(2)
+  endif
+
+  nRet := split(taLine[0], taChamps, ";")
+  LOG("Nombre de champ trouve dans le fichier", build(nRet))
+  if(nRet <> FILE_MAX_CHAMPS) then
+		ERREUR(build("Le fichier contient ", nRet, " séparateurs. Il doit contenir ", FILE_MAX_CHAMPS," séparateurs"), "Aborted")
+        bfEXIT(3)
+  endif
+
+  tFICHIERPDF := build(pINPUT_DIR,"/*_", taChamps[FILE_ORDER_NOMFILEPDF], "_*", ".pdf")
+  LOG("Masque fichier pdf", tFICHIERPDF)
+
+  while fFile2 in tFICHIERPDF do
+	LOG("Lecture du fichier", fFile2.FULLNAME)
+	pLOR_TRACK_ORDER_PDF := fFile2.FULLNAME
+  endwhile
+  if(pLOR_TRACK_ORDER_PDF = EMPTY) then
+	ERREUR(build("Fichier pdf avec masque ", tFICHIERPDF, " non trouve"), "Aborted")
+    bfEXIT(4)
+  endif
+
+  pLOR_TRACK_ORDER_SITE      := taChamps[FILE_ORDER_SITEID]
+  pLOR_TRACK_ORDER_SAP       := taChamps[FILE_ORDER_SAPID]
+  pLOR_TRACK_ORDER_DOCID     := taChamps[FILE_ORDER_DOCID]
+  pLOR_TRACK_ORDER_REFCLI    := taChamps[FILE_ORDER_REFCLI]
+  pLOR_TRACK_ORDER_ORIG      := taChamps[FILE_ORDER_ORIG]
+  pLOR_TRACK_ORDER_DTECMD    := taChamps[FILE_ORDER_DTECMD]
+  pLOR_TRACK_ORDER_STATUS    := taChamps[FILE_ORDER_STATUT]
+  pLOR_TRACK_ORDER_TYPE      := taChamps[FILE_ORDER_TYPEDOC]
+  pLOT_TRACK_ORDER_DTESTATUS := taChamps[FILE_ORDER_DTESTATUT]
+  pLOT_TRACK_ORDER_CLIENT    := taChamps[FILE_ORDER_CLIENT]
+
+
+  nExit := 0
+  switch(pLOR_TRACK_ORDER_STATUS) 
+     case "INVOICED" :
+        pLOR_TRACK_ORDER_AMOUNT := taChamps[FILE_ORDER_AMOUNT]
+        pLOR_TRACK_ORDER_DTINV  := time("%d/%m/%Y %H:%M:%S")
+		pLOR_TRACK_ORDER_DOCTYPE := "INVOIC"
+
+     case "IN_DELIVERY" :
+		pLOR_TRACK_ORDER_DOCTYPE := "ASN"
+
+     case "IN_PREPARATION" :
+		pLOR_TRACK_ORDER_DOCTYPE := "WEIGHTREPORT"
+
+     case "VALIDATED" :
+        pLOR_TRACK_ORDER_DOCTYPE := "ORDERS"
+		pLOR_TRACK_ORDER_DOCSUBTYPE := "SAP"
+
+
+default:
+	    ERREUR(build("Statut non gere ", pLOR_TRACK_ORDER_STATUS), "Aborted")
+        nExit := 5
+  endswitch
+ 
+  bfEXIT(nExit)
+endend
